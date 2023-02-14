@@ -20,6 +20,49 @@ from nemo_text_processing.text_normalization.en.graph_utils import NEMO_DIGIT, G
 from pynini.lib import pynutil
 
 
+def adjective_inflection(word: str):
+    def fill_bare_template(stem, mi_sg, mp_pl, vowel, stem_b=""):
+        if stem_b == "":
+            stem_b = stem
+        return {
+            "mi_sg_nom": mi_sg,
+            "mi_sg_gen": stem + "ego",
+            "mi_sg_dat": stem + "emu",
+            "mi_sg_ins": stem + vowel + "m",
+            "nt_sg_nom": stem + "e",
+            "f_sg_nom": stem_b + "a",
+            "f_sg_gen": stem + "ej",
+            "f_sg_ins": stem_b + "ą",
+            "mp_pl_nom": mp_pl,
+            "pl_ins": stem + vowel + "mi",
+            "pl_loc": stem + vowel + "ch",
+
+        }
+    stem_b = ""
+    if word.endswith("en"):
+        stem = word[:-2] + "n"
+        mi_sg = word
+        mp_pl = stem + "i"
+        vowel = "y"
+    elif word.endswith("ni"):
+        stem = word
+        mi_sg = word
+        mp_pl = word
+        vowel = ""
+    elif word.endswith("szy"):
+        stem = word[:-1]
+        mi_sg = word
+        mp_pl = word[:-2] + "i"
+        vowel = "y"
+    elif word.endswith("gi"):
+        stem = word
+        stem_b = word[:-1]
+        mi_sg = word
+        mp_pl = word[:-2] + "dzy"
+        vowel = ""
+    return fill_bare_template(stem, mi_sg, mp_pl, vowel, stem_b)
+
+
 class OrdinalFst(GraphFst):
     """
     Finite state transducer for classifying cardinals, e.g. 
