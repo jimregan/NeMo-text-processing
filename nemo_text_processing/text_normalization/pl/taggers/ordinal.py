@@ -36,7 +36,7 @@ def adjective_inflection(word: str):
             "mp_pl_nom": mp_pl,
             "pl_ins": stem + vowel + "mi",
             "pl_loc": stem + vowel + "ch",
-
+            "compound": stem_b + "o",
         }
     stem_b = ""
     if word.endswith("en"):
@@ -44,7 +44,7 @@ def adjective_inflection(word: str):
         mi_sg = word
         mp_pl = stem + "i"
         vowel = "y"
-    elif word.endswith("ni"):
+    elif word[-2:] in ["ni", "ci"]:
         stem = word
         mi_sg = word
         mp_pl = word
@@ -60,14 +60,24 @@ def adjective_inflection(word: str):
         mi_sg = word
         mp_pl = word[:-2] + "dzy"
         vowel = ""
+    elif word.endswith("sty"):
+        stem = word[:-1]
+        mi_sg = word
+        mp_pl = word[:-3] + "ści"
+        vowel = "y"
+    elif word.endswith("ty"):
+        stem = word[:-1]
+        mi_sg = word
+        mp_pl = word[:-2] + "ci"
+        vowel = "y"
     return fill_bare_template(stem, mi_sg, mp_pl, vowel, stem_b)
 
 
 class OrdinalFst(GraphFst):
     """
     Finite state transducer for classifying cardinals, e.g. 
-        "2." -> ordinal { integer: "zwei" } }
-        "2tes" -> ordinal { integer: "zwei" } }
+        "2." -> ordinal { integer: "drugi" } }
+        "2-gi" -> ordinal { integer: "drugi" } }
 
     Args:
         cardinal: cardinal GraphFst
