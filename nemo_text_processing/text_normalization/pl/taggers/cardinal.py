@@ -25,43 +25,6 @@ from nemo_text_processing.text_normalization.en.graph_utils import (
 )
 from pynini.lib import pynutil
 
-AND = "und"
-
-
-def get_ties_digit(digit_path: str, tie_path: str) -> 'pynini.FstLike':
-    """
-    getting all inverse normalizations for numbers between 21 - 100
-
-    Args:
-        digit_path: file to digit tsv
-        tie_path: file to tie tsv, e.g. 20, 30, etc.
-    Returns:
-        res: fst that converts numbers to their verbalization
-    """
-
-    digits = defaultdict(list)
-    ties = defaultdict(list)
-    for k, v in load_labels(digit_path):
-        digits[v].append(k)
-    digits["1"] = ["ein"]
-
-    for k, v in load_labels(tie_path):
-        ties[v].append(k)
-
-    d = []
-    for i in range(21, 100):
-        s = str(i)
-        if s[1] == "0":
-            continue
-
-        for di in digits[s[1]]:
-            for ti in ties[s[0]]:
-                word = di + f" {AND} " + ti
-                d.append((word, s))
-
-    res = pynini.string_map(d)
-    return res
-
 
 class CardinalFst(GraphFst):
     """
