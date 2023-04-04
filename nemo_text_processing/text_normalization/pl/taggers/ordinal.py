@@ -12,9 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Adapted from https://github.com/google/TextNormalizationCoveringGrammars
-# Russian minimally supervised number grammar.
-
 import pynini
 from nemo_text_processing.text_normalization.en.graph_utils import NEMO_DIGIT, GraphFst
 from pynini.lib import pynutil
@@ -80,16 +77,13 @@ class OrdinalFst(GraphFst):
         "2-gi" -> ordinal { integer: "drugi" } }
 
     Args:
-        cardinal: cardinal GraphFst
         deterministic: if True will provide a single transduction option,
             for False multiple transduction are generated (used for audio-based normalization)
     """
 
-    def __init__(self, cardinal: GraphFst, deterministic=False):
+    def __init__(self, deterministic=False):
         super().__init__(name="ordinal", kind="classify", deterministic=deterministic)
 
-        cardinal_graph = cardinal.graph
-        endings = ["ter", "tes", "tem", "te", "ten"]
         self.graph = (
             (
                 pynini.closure(NEMO_DIGIT | pynini.accep("."))
