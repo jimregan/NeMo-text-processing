@@ -22,8 +22,8 @@ from nemo_text_processing.text_normalization.en.graph_utils import (
     delete_space,
     insert_space,
 )
-from nemo_text_processing.text_normalization.sv.graph_utils import SV_ALPHA
-from nemo_text_processing.text_normalization.sv.utils import get_abs_path
+from nemo_text_processing.text_normalization.pl.graph_utils import PL_ALPHA
+from nemo_text_processing.text_normalization.pl.utils import get_abs_path
 from pynini.lib import pynutil
 
 
@@ -38,20 +38,10 @@ def make_million(number: str, non_zero_no_one: 'pynini.FstLike', deterministic: 
     Returns:
         graph: A pynini.FstLike object
     """
-    old_orth = number.replace("lj", "lli")
     graph = pynutil.add_weight(pynini.cross("001", number), -0.001)
     if not deterministic:
-        graph |= pynutil.add_weight(pynini.cross("001", old_orth), -0.001)
-        # 'ett' is usually wrong for these numbers, but it occurs
-        for one in ["en", "ett"]:
-            graph |= pynutil.add_weight(pynini.cross("001", f"{one} {number}"), -0.001)
-            graph |= pynutil.add_weight(pynini.cross("001", f"{one} {old_orth}"), -0.001)
-            graph |= pynutil.add_weight(pynini.cross("001", f"{one}{number}"), -0.001)
-            graph |= pynutil.add_weight(pynini.cross("001", f"{one}{old_orth}"), -0.001)
+        graph |= pynutil.add_weight(pynini.cross("001", "jeden {number}"), -0.001)
     graph |= non_zero_no_one + pynutil.insert(f" {number}er")
-    if not deterministic:
-        graph |= pynutil.add_weight(non_zero_no_one + pynutil.insert(f" {old_orth}er"), -0.001)
-        graph |= pynutil.add_weight(non_zero_no_one + pynutil.insert(f"{old_orth}er"), -0.001)
     graph |= pynutil.delete("000")
     graph += insert_space
     return graph
@@ -89,8 +79,8 @@ def filter_punctuation(fst: 'pynini.FstLike') -> 'pynini.FstLike':
 class CardinalFst(GraphFst):
     """
     Finite state transducer for classifying cardinals, e.g.
-        "1000" ->  cardinal { integer: "tusen" }
-        "2 000 000" -> cardinal { integer: "två miljon" }
+        "1000" ->  cardinal { integer: "tysiąc" }
+        "2 000 000" -> cardinal { integer: "dwa miliony" }
 
     Args:
         deterministic: if True will provide a single transduction option,
@@ -186,13 +176,6 @@ class CardinalFst(GraphFst):
 
         tusen = pynutil.insert("tusen")
         etttusen = tusen
-        if not deterministic:
-            tusen |= pynutil.add_weight(pynutil.insert(" tusen"), -0.001)
-            etttusen = tusen
-            etttusen |= pynutil.add_weight(pynutil.insert("etttusen"), -0.001)
-            etttusen |= pynutil.add_weight(pynutil.insert(" etttusen"), -0.001)
-            etttusen |= pynutil.add_weight(pynutil.insert("ett tusen"), -0.001)
-            etttusen |= pynutil.add_weight(pynutil.insert(" ett tusen"), -0.001)
 
         following_hundred = insert_space + graph_hundreds_component_at_least_one_non_zero_digit
         if not deterministic:
@@ -221,12 +204,12 @@ class CardinalFst(GraphFst):
         )
 
         non_zero_no_one = graph_hundreds_component_at_least_one_non_zero_digit_no_one
-        graph_million = make_million("miljon", non_zero_no_one, deterministic)
-        graph_milliard = make_million("miljard", non_zero_no_one, deterministic)
-        graph_billion = make_million("biljon", non_zero_no_one, deterministic)
-        graph_billiard = make_million("biljard", non_zero_no_one, deterministic)
-        graph_trillion = make_million("triljon", non_zero_no_one, deterministic)
-        graph_trilliard = make_million("triljard", non_zero_no_one, deterministic)
+        graph_million = make_million("milion", non_zero_no_one, deterministic)
+        graph_milliard = make_million("miliard", non_zero_no_one, deterministic)
+        graph_billion = make_million("bilion", non_zero_no_one, deterministic)
+        graph_billiard = make_million("biliard", non_zero_no_one, deterministic)
+        graph_trillion = make_million("trilion", non_zero_no_one, deterministic)
+        graph_trilliard = make_million("triliard", non_zero_no_one, deterministic)
 
         graph = (
             graph_trilliard
