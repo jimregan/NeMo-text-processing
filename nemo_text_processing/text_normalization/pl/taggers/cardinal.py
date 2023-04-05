@@ -27,7 +27,7 @@ from nemo_text_processing.text_normalization.pl.utils import get_abs_path
 from pynini.lib import pynutil
 
 
-def make_million(number: str, non_zero_no_one: 'pynini.FstLike', deterministic: bool = True) -> 'pynini.FstLike':
+def make_million(number: str, non_zero_pl: 'pynini.FstLike', non_zero_quant: 'pynini.FstLike', case: str = None, deterministic: bool = True) -> 'pynini.FstLike':
     """
     Helper function for millions/milliards and higher
     Args:
@@ -38,10 +38,41 @@ def make_million(number: str, non_zero_no_one: 'pynini.FstLike', deterministic: 
     Returns:
         graph: A pynini.FstLike object
     """
-    graph = pynutil.add_weight(pynini.cross("001", number), -0.001)
+    if case is None:
+        sg_end = ""
+        pl_end = "y"
+        quant_end = "ów"
+        one = "jeden"
+    else:
+        SG = {
+            "loc": "ie",
+            "ins": "em",
+            "dat": "owi",
+            "gen": "a",
+        }
+        PL = {
+            "loc": "ach",
+            "ins": "ami",
+            "dat": "om",
+            "gen": "ów",
+        }
+        ONE = {
+            "loc": "jednym",
+            "ins": "jednym",
+            "dat": "jednemu",
+            "gen": "jednego",
+        }
+        sg_end = SG[case]
+        pl_end = PL[case]
+        one = ONE[case]
+        quant_end = pl_end
+        if case == "loc" and number.endswith("ard"):
+            sg_end = "zie"
+    graph = pynutil.add_weight(pynini.cross("001", f"{number}{sg_end}"), -0.001)
     if not deterministic:
-        graph |= pynutil.add_weight(pynini.cross("001", "jeden {number}"), -0.001)
-    graph |= non_zero_no_one + pynutil.insert(f" {number}er")
+        graph |= pynutil.add_weight(pynini.cross("001", f"{one} {number}{sg_end}"), -0.001)
+    graph |= non_zero_pl + pynutil.insert(f" {number}{pl_end}")
+    graph |= non_zero_quant + pynutil.insert(f" {number}{quant_end}")
     graph |= pynutil.delete("000")
     graph += insert_space
     return graph
