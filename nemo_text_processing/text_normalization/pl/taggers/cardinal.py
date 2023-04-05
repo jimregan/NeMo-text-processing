@@ -29,7 +29,7 @@ from pynini.lib import pynutil
 
 def make_million(number: str, non_zero_pl: 'pynini.FstLike', non_zero_quant: 'pynini.FstLike', case: str = None, deterministic: bool = True) -> 'pynini.FstLike':
     """
-    Helper function for millions/milliards and higher
+    Helper function for thousands/millions/milliards and higher
     Args:
         number: the string of the number
         non_zero_pl: An fst of digits excluding 0, 1, 5-9, to prefix to plural forms (nom/acc)
@@ -74,6 +74,9 @@ def make_million(number: str, non_zero_pl: 'pynini.FstLike', non_zero_quant: 'py
     if not deterministic:
         graph |= pynutil.add_weight(pynini.cross("001", f"{one} {number}{sg_end}"), -0.001)
     graph |= non_zero_pl + pynutil.insert(f" {number}{pl_end}")
+    # hack for the stem change in tysiąc (1000)
+    if number == "tysiąc":
+        number == "tysięc"
     graph |= non_zero_quant + pynutil.insert(f" {number}{quant_end}")
     graph |= pynutil.delete("000")
     graph += insert_space
@@ -128,6 +131,12 @@ class CardinalFst(GraphFst):
         ties = pynini.invert(pynini.string_file(get_abs_path("data/numbers/tens.tsv")))
         hundreds = pynini.invert(pynini.string_file(get_abs_path("data/numbers/hundreds.tsv")))
 
+        plural_3digits = NEMO_DIGIT + (NEMO_DIGIT - "1") + pynini.union("2", "3", "4")
+        quantity_3digits = NEMO_DIGIT + pynini.union(
+            "1" + NEMO_DIGIT,
+            (NEMO_DIGIT - "1") + pynini.union("0", "5", "6", "7", "8", "9")
+        )
+
         # Any single digit
         graph_digit = digit
         digits_no_one = (NEMO_DIGIT - "1") @ graph_digit
@@ -135,13 +144,6 @@ class CardinalFst(GraphFst):
 
         single_digits_graph = graph_digit | zero
         self.single_digits_graph = single_digits_graph + pynini.closure(insert_space + single_digits_graph)
-
-        # spoken this way, so useful for e2e ASR
-        alt_ties = ties @ pynini.cdrewrite(ties_alt_endings, "", "[EOS]", NEMO_SIGMA)
-        if not deterministic:
-            ties |= pynutil.add_weight(alt_ties, -0.001)
-            ties |= pynutil.add_weight(pynini.cross("4", "förtio"), -0.001)
-            ties |= pynutil.add_weight(pynini.cross("4", "förti"), -0.001)
 
         # Any double digit
         graph_tens = teen
