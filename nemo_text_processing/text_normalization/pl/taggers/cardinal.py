@@ -32,7 +32,9 @@ def make_million(number: str, non_zero_pl: 'pynini.FstLike', non_zero_quant: 'py
     Helper function for millions/milliards and higher
     Args:
         number: the string of the number
-        non_zero_no_one: An fst of digits excluding 0 and 1, to prefix to the number
+        non_zero_pl: An fst of digits excluding 0, 1, 5-9, to prefix to plural forms (nom/acc)
+        non_zero_quant: An fst of digits excluding 0 and 1-4, to prefix to the quantity forms (nom/acc)
+        case: the string of the case (if None, nominative/accusative is presumed)
         deterministic: if True, generate a deterministic fst
 
     Returns:
