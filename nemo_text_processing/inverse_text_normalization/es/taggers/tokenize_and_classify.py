@@ -15,6 +15,8 @@
 import os
 
 import pynini
+from pynini.lib import pynutil
+
 from nemo_text_processing.inverse_text_normalization.es.taggers.cardinal import CardinalFst
 from nemo_text_processing.inverse_text_normalization.es.taggers.date import DateFst
 from nemo_text_processing.inverse_text_normalization.es.taggers.decimal import DecimalFst
@@ -36,7 +38,6 @@ from nemo_text_processing.text_normalization.en.graph_utils import (
     generator_main,
 )
 from nemo_text_processing.utils.logging import logger
-from pynini.lib import pynutil
 
 
 class ClassifyFst(GraphFst):
@@ -71,31 +72,33 @@ class ClassifyFst(GraphFst):
         else:
             logger.info(f"Creating ClassifyFst grammars.")
 
-            cardinal = CardinalFst()
+            cardinal = CardinalFst(input_case=input_case)
             cardinal_graph = cardinal.fst
 
-            ordinal = OrdinalFst(cardinal)
+            ordinal = OrdinalFst(cardinal, input_case=input_case)
             ordinal_graph = ordinal.fst
 
-            decimal = DecimalFst(cardinal)
+            decimal = DecimalFst(cardinal, input_case=input_case)
             decimal_graph = decimal.fst
 
-            fraction = FractionFst(cardinal, ordinal)
+            fraction = FractionFst(cardinal, ordinal, input_case=input_case)
             fraction_graph = fraction.fst
 
-            measure_graph = MeasureFst(cardinal=cardinal, decimal=decimal, fraction=fraction).fst
-            date_graph = DateFst(cardinal).fst
+            measure_graph = MeasureFst(
+                cardinal=cardinal, decimal=decimal, fraction=fraction, input_case=input_case
+            ).fst
+            date_graph = DateFst(cardinal, input_case=input_case).fst
             word_graph = WordFst().fst
-            time_graph = TimeFst().fst
-            money_graph = MoneyFst(cardinal=cardinal, decimal=decimal).fst
-            whitelist_graph = WhiteListFst(input_file=whitelist).fst
+            time_graph = TimeFst(input_case=input_case).fst
+            money_graph = MoneyFst(cardinal=cardinal, decimal=decimal, input_case=input_case).fst
+            whitelist_graph = WhiteListFst(input_file=whitelist, input_case=input_case).fst
             punct_graph = PunctuationFst().fst
-            electronic_graph = ElectronicFst().fst
-            telephone_graph = TelephoneFst().fst
+            electronic_graph = ElectronicFst(input_case=input_case).fst
+            telephone_graph = TelephoneFst(input_case=input_case).fst
 
             classify = (
                 pynutil.add_weight(whitelist_graph, 1.01)
-                | pynutil.add_weight(time_graph, 1.1)
+                | pynutil.add_weight(time_graph, 1.08)
                 | pynutil.add_weight(date_graph, 1.09)
                 | pynutil.add_weight(decimal_graph, 1.09)
                 | pynutil.add_weight(fraction_graph, 1.09)
@@ -104,7 +107,7 @@ class ClassifyFst(GraphFst):
                 | pynutil.add_weight(ordinal_graph, 1.6)
                 | pynutil.add_weight(money_graph, 1.6)
                 | pynutil.add_weight(telephone_graph, 1.6)
-                | pynutil.add_weight(electronic_graph, 1.6)
+                | pynutil.add_weight(electronic_graph, 2.96)
                 | pynutil.add_weight(word_graph, 100)
             )
 

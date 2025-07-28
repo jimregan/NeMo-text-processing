@@ -15,6 +15,9 @@
 import os
 
 import pynini
+from pynini.examples import plurals
+from pynini.lib import pynutil
+
 from nemo_text_processing.text_normalization.en.graph_utils import (
     NEMO_CHAR,
     NEMO_DIGIT,
@@ -55,8 +58,6 @@ from nemo_text_processing.text_normalization.en.verbalizers.telephone import Tel
 from nemo_text_processing.text_normalization.en.verbalizers.time import TimeFst as vTime
 from nemo_text_processing.text_normalization.en.verbalizers.word import WordFst as vWord
 from nemo_text_processing.utils.logging import logger
-from pynini.examples import plurals
-from pynini.lib import pynutil
 
 
 class ClassifyFst(GraphFst):
@@ -64,7 +65,7 @@ class ClassifyFst(GraphFst):
     Final class that composes all other classification grammars. This class can process an entire sentence including punctuation.
     For deployment, this grammar will be compiled and exported to OpenFst Finite State Archive (FAR) File.
     More details to deployment at NeMo/tools/text_processing_deployment.
-    
+
     Args:
         input_case: accepting either "lower_cased" or "cased" input.
         deterministic: if True will provide a single transduction option,

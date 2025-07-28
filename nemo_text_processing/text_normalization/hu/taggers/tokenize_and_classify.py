@@ -15,6 +15,8 @@
 import os
 
 import pynini
+from pynini.lib import pynutil
+
 from nemo_text_processing.text_normalization.en.graph_utils import (
     NEMO_WHITE_SPACE,
     GraphFst,
@@ -36,7 +38,6 @@ from nemo_text_processing.text_normalization.hu.taggers.time import TimeFst
 from nemo_text_processing.text_normalization.hu.taggers.whitelist import WhiteListFst
 from nemo_text_processing.text_normalization.hu.taggers.word import WordFst
 from nemo_text_processing.utils.logging import logger
-from pynini.lib import pynutil
 
 
 class ClassifyFst(GraphFst):
@@ -68,7 +69,8 @@ class ClassifyFst(GraphFst):
             os.makedirs(cache_dir, exist_ok=True)
             whitelist_file = os.path.basename(whitelist) if whitelist else ""
             far_file = os.path.join(
-                cache_dir, f"_{input_case}_hu_tn_{deterministic}_deterministic{whitelist_file}.far"
+                cache_dir,
+                f"_{input_case}_hu_tn_{deterministic}_deterministic{whitelist_file}.far",
             )
         if not overwrite_cache and far_file and os.path.exists(far_file):
             self.fst = pynini.Far(far_file, mode="r")["tokenize_and_classify"]
@@ -85,10 +87,17 @@ class ClassifyFst(GraphFst):
             self.decimal = DecimalFst(cardinal=self.cardinal, deterministic=deterministic)
             decimal_graph = self.decimal.fst
 
-            self.fraction = FractionFst(cardinal=self.cardinal, ordinal=self.ordinal, deterministic=deterministic)
+            self.fraction = FractionFst(
+                cardinal=self.cardinal,
+                ordinal=self.ordinal,
+                deterministic=deterministic,
+            )
             fraction_graph = self.fraction.fst
             self.measure = MeasureFst(
-                cardinal=self.cardinal, decimal=self.decimal, fraction=self.fraction, deterministic=deterministic
+                cardinal=self.cardinal,
+                decimal=self.decimal,
+                fraction=self.fraction,
+                deterministic=deterministic,
             )
             measure_graph = self.measure.fst
             self.date = DateFst(cardinal=self.cardinal, deterministic=deterministic)
@@ -100,7 +109,11 @@ class ClassifyFst(GraphFst):
             telephone_graph = self.telephone.fst
             self.electronic = ElectronicFst(deterministic=deterministic)
             electronic_graph = self.electronic.fst
-            self.money = MoneyFst(cardinal=self.cardinal, decimal=self.decimal, deterministic=deterministic)
+            self.money = MoneyFst(
+                cardinal=self.cardinal,
+                decimal=self.decimal,
+                deterministic=deterministic,
+            )
             money_graph = self.money.fst
             self.whitelist = WhiteListFst(input_case=input_case, deterministic=deterministic, input_file=whitelist)
             whitelist_graph = self.whitelist.fst
@@ -117,7 +130,7 @@ class ClassifyFst(GraphFst):
                 | pynutil.add_weight(decimal_graph, 1.1)
                 | pynutil.add_weight(money_graph, 1.1)
                 | pynutil.add_weight(telephone_graph, 1.1)
-                | pynutil.add_weight(electronic_graph, 1.1)
+                | pynutil.add_weight(electronic_graph, 1.11)
                 | pynutil.add_weight(word_graph, 200)
             )
             punct = pynutil.insert("tokens { ") + pynutil.add_weight(punct_graph, weight=2.1) + pynutil.insert(" }")

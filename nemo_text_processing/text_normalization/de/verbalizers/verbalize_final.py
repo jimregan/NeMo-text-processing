@@ -15,6 +15,8 @@
 import os
 
 import pynini
+from pynini.lib import pynutil
+
 from nemo_text_processing.text_normalization.de.verbalizers.verbalize import VerbalizeFst
 from nemo_text_processing.text_normalization.en.graph_utils import (
     GraphFst,
@@ -24,13 +26,12 @@ from nemo_text_processing.text_normalization.en.graph_utils import (
 )
 from nemo_text_processing.text_normalization.en.verbalizers.word import WordFst
 from nemo_text_processing.utils.logging import logger
-from pynini.lib import pynutil
 
 
 class VerbalizeFinalFst(GraphFst):
     """
     Finite state transducer that verbalizes an entire sentence
-    
+
     Args:
         deterministic: if True will provide a single transduction option,
             for False multiple options (used for audio-based normalization)

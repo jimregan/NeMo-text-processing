@@ -15,6 +15,8 @@
 import os
 
 import pynini
+from pynini.lib import pynutil
+
 from nemo_text_processing.text_normalization.en.graph_utils import (
     MIN_NEG_WEIGHT,
     NEMO_ALPHA,
@@ -25,7 +27,6 @@ from nemo_text_processing.text_normalization.en.graph_utils import (
 )
 from nemo_text_processing.text_normalization.en.taggers.punctuation import PunctuationFst
 from nemo_text_processing.utils.logging import logger
-from pynini.lib import pynutil
 
 
 class PostProcessingFst:
@@ -98,17 +99,17 @@ class PostProcessingFst:
 
     def get_punct_postprocess_graph(self):
         """
-            Returns graph to post process punctuation marks.
+        Returns graph to post process punctuation marks.
 
-            {``} quotes are converted to {"}. Note, if there are spaces around single quote {'}, they will be kept.
-            By default, a space is added after a punctuation mark, and spaces are removed before punctuation marks.
+        {``} quotes are converted to {"}. Note, if there are spaces around single quote {'}, they will be kept.
+        By default, a space is added after a punctuation mark, and spaces are removed before punctuation marks.
         """
         punct_marks_all = PunctuationFst().punct_marks
 
         # no_space_before_punct assume no space before them
         quotes = ["'", "\"", "``", "«"]
         dashes = ["-", "—"]
-        brackets = ["<", "{", "("]
+        brackets = ["<", "{", "(", r"\["]
         open_close_single_quotes = [
             ("`", "`"),
         ]

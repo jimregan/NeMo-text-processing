@@ -29,6 +29,10 @@ import pynini
 import regex
 import tqdm
 from joblib import Parallel, delayed
+from pynini.lib.rewrite import top_rewrite
+from sacremoses import MosesDetokenizer
+from tqdm import tqdm
+
 from nemo_text_processing.text_normalization.data_loader_utils import (
     load_file,
     post_process_punct,
@@ -38,9 +42,6 @@ from nemo_text_processing.text_normalization.data_loader_utils import (
 from nemo_text_processing.text_normalization.preprocessing_utils import additional_split
 from nemo_text_processing.text_normalization.token_parser import PRESERVE_ORDER_KEY, TokenParser
 from nemo_text_processing.utils.logging import logger
-from pynini.lib.rewrite import top_rewrite
-from sacremoses import MosesDetokenizer
-from tqdm import tqdm
 
 # this is to handle long input
 sys.setrecursionlimit(3000)
@@ -117,8 +118,8 @@ class Normalizer:
         self.post_processor = None
 
         if lang == "en":
-            from nemo_text_processing.text_normalization.en.verbalizers.verbalize_final import VerbalizeFinalFst
             from nemo_text_processing.text_normalization.en.verbalizers.post_processing import PostProcessingFst
+            from nemo_text_processing.text_normalization.en.verbalizers.verbalize_final import VerbalizeFinalFst
 
             if post_process:
                 self.post_processor = PostProcessingFst(cache_dir=cache_dir, overwrite_cache=overwrite_cache)
@@ -161,9 +162,21 @@ class Normalizer:
         elif lang == 'ar':
             from nemo_text_processing.text_normalization.ar.taggers.tokenize_and_classify import ClassifyFst
             from nemo_text_processing.text_normalization.ar.verbalizers.verbalize_final import VerbalizeFinalFst
+        elif lang == 'hi':
+            from nemo_text_processing.text_normalization.hi.taggers.tokenize_and_classify import ClassifyFst
+            from nemo_text_processing.text_normalization.hi.verbalizers.verbalize_final import VerbalizeFinalFst
         elif lang == 'it':
             from nemo_text_processing.text_normalization.it.taggers.tokenize_and_classify import ClassifyFst
             from nemo_text_processing.text_normalization.it.verbalizers.verbalize_final import VerbalizeFinalFst
+        elif lang == 'hy':
+            from nemo_text_processing.text_normalization.hy.taggers.tokenize_and_classify import ClassifyFst
+            from nemo_text_processing.text_normalization.hy.verbalizers.verbalize_final import VerbalizeFinalFst
+        elif lang == 'rw':
+            from nemo_text_processing.text_normalization.rw.taggers.tokenize_and_classify import ClassifyFst
+            from nemo_text_processing.text_normalization.rw.verbalizers.verbalize_final import VerbalizeFinalFst
+        elif lang == 'ja':
+            from nemo_text_processing.text_normalization.ja.taggers.tokenize_and_classify import ClassifyFst
+            from nemo_text_processing.text_normalization.ja.verbalizers.verbalize_final import VerbalizeFinalFst
         else:
             raise NotImplementedError(f"Language {lang} has not been supported yet.")
 
@@ -516,7 +529,7 @@ class Normalizer:
         logger.warning(f'Normalized version saved at {output_filename}')
 
     def split_text_into_sentences(self, text: str, additional_split_symbols: str = "") -> List[str]:
-        """
+        r"""
         Split text into sentences.
 
         Args:
@@ -530,8 +543,8 @@ class Normalizer:
         upper_case_unicode = ""
 
         if self.lang == "ru":
-            lower_case_unicode = '\u0430-\u04FF'
-            upper_case_unicode = '\u0410-\u042F'
+            lower_case_unicode = '\u0430-\u04ff'
+            upper_case_unicode = '\u0410-\u042f'
 
         # end of quoted speech - to be able to split sentences by full stop
         text = re.sub(r"([\.\?\!])([\"\'])", r"\g<2>\g<1> ", text)
@@ -710,7 +723,7 @@ def parse_args():
     parser.add_argument(
         "--language",
         help="language",
-        choices=["en", "de", "es", "fr", "hu", "sv", "zh", "ar", "it"],
+        choices=["en", "de", "es", "fr", "hu", "sv", "zh", "ar", "it", "hy", "ja", "hi"],
         default="en",
         type=str,
     )
@@ -723,6 +736,11 @@ def parse_args():
         type=str,
     )
     parser.add_argument("--verbose", help="print info for debugging", action='store_true')
+    parser.add_argument(
+        "--no_post_process",
+        help="WFST-based post processing, e.g. to remove extra spaces added during TN, normalize punctuation marks [could differ from the input]. Only Eng is supported, not supported in Sparrowhawk",
+        action="store_true",
+    )
     parser.add_argument(
         "--punct_post_process",
         help="Add this flag to enable punctuation post processing to match input.",
@@ -767,6 +785,7 @@ if __name__ == "__main__":
 
     normalizer = Normalizer(
         input_case=args.input_case,
+        post_process=not args.no_post_process,
         cache_dir=args.cache_dir,
         overwrite_cache=args.overwrite_cache,
         whitelist=whitelist,

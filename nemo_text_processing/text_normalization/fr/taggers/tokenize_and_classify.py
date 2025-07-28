@@ -15,6 +15,8 @@
 import os
 
 import pynini
+from pynini.lib import pynutil
+
 from nemo_text_processing.text_normalization.en.graph_utils import (
     NEMO_WHITE_SPACE,
     GraphFst,
@@ -24,13 +26,13 @@ from nemo_text_processing.text_normalization.en.graph_utils import (
 )
 from nemo_text_processing.text_normalization.en.taggers.punctuation import PunctuationFst
 from nemo_text_processing.text_normalization.fr.taggers.cardinal import CardinalFst
+from nemo_text_processing.text_normalization.fr.taggers.date import DateFst
 from nemo_text_processing.text_normalization.fr.taggers.decimals import DecimalFst
 from nemo_text_processing.text_normalization.fr.taggers.fraction import FractionFst
 from nemo_text_processing.text_normalization.fr.taggers.ordinal import OrdinalFst
 from nemo_text_processing.text_normalization.fr.taggers.whitelist import WhiteListFst
 from nemo_text_processing.text_normalization.fr.taggers.word import WordFst
 from nemo_text_processing.utils.logging import logger
-from pynini.lib import pynutil
 
 
 class ClassifyFst(GraphFst):
@@ -61,7 +63,8 @@ class ClassifyFst(GraphFst):
             os.makedirs(cache_dir, exist_ok=True)
             whitelist_file = os.path.basename(whitelist) if whitelist else ""
             far_file = os.path.join(
-                cache_dir, f"_{input_case}_fr_tn_{deterministic}_deterministic{whitelist_file}.far"
+                cache_dir,
+                f"_{input_case}_fr_tn_{deterministic}_deterministic{whitelist_file}.far",
             )
         if not overwrite_cache and far_file and os.path.exists(far_file):
             self.fst = pynini.Far(far_file, mode="r")["tokenize_and_classify"]
@@ -78,15 +81,23 @@ class ClassifyFst(GraphFst):
             self.decimal = DecimalFst(cardinal=self.cardinal, deterministic=deterministic)
             decimal_graph = self.decimal.fst
 
-            self.fraction = FractionFst(cardinal=self.cardinal, ordinal=self.ordinal, deterministic=deterministic)
+            self.fraction = FractionFst(
+                cardinal=self.cardinal,
+                ordinal=self.ordinal,
+                deterministic=deterministic,
+            )
             fraction_graph = self.fraction.fst
             word_graph = WordFst(deterministic=deterministic).fst
             self.whitelist = WhiteListFst(input_case=input_case, deterministic=deterministic, input_file=whitelist)
             whitelist_graph = self.whitelist.fst
             punct_graph = PunctuationFst(deterministic=deterministic).fst
 
+            self.date = DateFst(self.cardinal, deterministic=deterministic)
+            date_graph = self.date.fst
+
             classify = (
                 pynutil.add_weight(whitelist_graph, 1.01)
+                | pynutil.add_weight(date_graph, 1.1)
                 | pynutil.add_weight(cardinal_graph, 1.1)
                 | pynutil.add_weight(fraction_graph, 1.09)
                 | pynutil.add_weight(ordinal_graph, 1.1)
@@ -104,14 +115,7 @@ class ClassifyFst(GraphFst):
                 pynini.closure(punct + pynutil.insert(" ")) + token + pynini.closure(pynutil.insert(" ") + punct)
             )
 
-            graph = token_plus_punct + pynini.closure(
-                (
-                    pynini.compose(pynini.closure(NEMO_WHITE_SPACE, 1), delete_extra_space)
-                    | (pynutil.insert(" ") + punct + pynutil.insert(" "))
-                )
-                + token_plus_punct
-            )
-
+            graph = token_plus_punct + pynini.closure((delete_extra_space).ques + token_plus_punct)
             graph = delete_space + graph + delete_space
             graph |= punct
 

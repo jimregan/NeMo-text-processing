@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION & AFFILIATES.  All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION & AFFILIATES.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,10 +18,11 @@ from pathlib import Path
 from typing import Dict
 
 import pynini
-from nemo_text_processing.utils.logging import logger
 from pynini import Far
 from pynini.export import export
 from pynini.lib import byte, pynutil, utf8
+
+from nemo_text_processing.utils.logging import logger
 
 # ghaph_utils is here since importing from en folders will cause import errors
 # that the data file names have to be the same with what are in the en folder
@@ -32,21 +33,26 @@ NEMO_DIGIT = byte.DIGIT
 NEMO_LOWER = pynini.union(*string.ascii_lowercase).optimize()
 NEMO_UPPER = pynini.union(*string.ascii_uppercase).optimize()
 NEMO_ALPHA = pynini.union(NEMO_LOWER, NEMO_UPPER).optimize()
-NEMO_NON_BREAKING_SPACE = "\u00A0"
+NEMO_NON_BREAKING_SPACE = "\u00a0"
 NEMO_SPACE = " "
-NEMO_WHITE_SPACE = pynini.union(" ", "\t", "\n", "\r", "\u00A0").optimize()
+NEMO_WHITE_SPACE = pynini.union(" ", "\t", "\n", "\r", "\u00a0").optimize()
 NEMO_NOT_SPACE = pynini.difference(NEMO_CHAR, NEMO_WHITE_SPACE).optimize()
 NEMO_NOT_QUOTE = pynini.difference(NEMO_CHAR, r'"').optimize()
 
 NEMO_PUNCT = pynini.union(*map(pynini.escape, string.punctuation)).optimize()
 
-
 NEMO_SIGMA = pynini.closure(NEMO_CHAR)
+NEMO_NOT_ALPHA = pynini.difference(NEMO_SIGMA, NEMO_ALPHA).optimize()
+NEMO_SPACE_CHAR = pynini.union(NEMO_CHAR, NEMO_SPACE)
 
 delete_space = pynutil.delete(pynini.closure(NEMO_WHITE_SPACE))
 delete_zero_or_one_space = pynutil.delete(pynini.closure(NEMO_WHITE_SPACE, 0, 1))
 insert_space = pynutil.insert(" ")
 delete_extra_space = pynini.cross(pynini.closure(NEMO_WHITE_SPACE, 1), " ")
+delete_preserve_order = pynini.closure(
+    pynutil.delete(" preserve_order: true")
+    | (pynutil.delete(" field_order: \"") + NEMO_NOT_QUOTE + pynutil.delete("\""))
+)
 
 
 def generator_main(file_name: str, graphs: Dict[str, "pynini.FstLike"]):
@@ -130,7 +136,7 @@ class GraphFst:
             + delete_space
             + pynutil.delete("}")
         )
-        return res @ pynini.cdrewrite(pynini.cross("\u00A0", " "), "", "", NEMO_SIGMA)
+        return res @ pynini.cdrewrite(pynini.cross("\u00a0", " "), "", "", NEMO_SIGMA)
 
 
 def convert_space(fst) -> "pynini.FstLike":
