@@ -250,6 +250,7 @@ def get_two_digits_all(digits_grouped, deterministic: bool = True):
 
     return two_digits_grouped
 
+
 def dict_to_graph(input_dict: dict, deterministic: bool = True) -> dict:
     """
     Converts a nested dictionary of forms to a dict of pynini.FSTs.
@@ -308,25 +309,6 @@ class CardinalFst(GraphFst):
         #     (NEMO_DIGIT - "1") + pynini.union("0", "5", "6", "7", "8", "9")
         # )
 
-        # # Any single digit
-        # graph_digit = digit
-        # digits_no_one = (NEMO_DIGIT - "1") @ graph_digit
-        # self.digit = graph_digit
-
-        # single_digits_graph = graph_digit | zero
-        # self.single_digits_graph = single_digits_graph + pynini.closure(insert_space + single_digits_graph)
-
-        # # Any double digit
-        # graph_tens = teen
-        # graph_ties = ties
-        # if deterministic:
-        #     graph_tens |= graph_ties + (pynutil.delete('0') | graph_digit)
-        # else:
-        #     graph_tens |= pynutil.add_weight(pynini.cross("18", "aderton"), -0.001)
-        #     graph_tens |= pynutil.add_weight(
-        #         graph_ties + (pynutil.delete('0') | (graph_digit | insert_space + graph_digit)), -0.001
-        #     )
-
         # hundreds = digits_no_one + pynutil.insert("hundra")
         # hundreds |= pynini.cross("1", "hundra")
         # if not deterministic:
@@ -379,9 +361,6 @@ class CardinalFst(GraphFst):
         # self.graph_hundreds_component_at_least_one_non_zero_digit_no_one = (
         #     graph_hundreds_component_at_least_one_non_zero_digit_no_one.optimize()
         # )
-
-        # tusen = pynutil.insert("tusen")
-        # etttusen = tusen
 
         # following_hundred = insert_space + graph_hundreds_component_at_least_one_non_zero_digit
         # if not deterministic:
