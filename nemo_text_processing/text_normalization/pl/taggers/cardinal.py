@@ -31,57 +31,21 @@ from pynini.lib import pynutil
 CASES = ["nom", "gen", "dat", "acc", "ins", "loc", "voc"]
 
 
-def make_million(number: str, non_zero_pl: 'pynini.FstLike', non_zero_quant: 'pynini.FstLike', case: str = None, deterministic: bool = True) -> 'pynini.FstLike':
-    """
-    Helper function for thousands/millions/milliards and higher
-    Args:
-        number: the string of the number
-        non_zero_pl: An fst of digits excluding 0, 1, 5-9, to prefix to plural forms (nom/acc)
-        non_zero_quant: An fst of digits excluding 0 and 1-4, to prefix to the quantity forms (nom/acc)
-        case: the string of the case (if None, nominative/accusative is presumed)
-        deterministic: if True, generate a deterministic fst
-
-    Returns:
-        graph: A pynini.FstLike object
-    """
+def make_million(number, digits_grouped, case: str = None, deterministic: bool = True) -> 'pynini.FstLike':
     if case is None:
-        sg_end = ""
-        pl_end = "y"
-        quant_end = "ów"
-        one = "jeden"
-    else:
-        SG = {
-            "loc": "ie",
-            "ins": "em",
-            "dat": "owi",
-            "gen": "a",
-        }
-        PL = {
-            "loc": "ach",
-            "ins": "ami",
-            "dat": "om",
-            "gen": "ów",
-        }
-        ONE = {
-            "loc": "jednym",
-            "ins": "jednym",
-            "dat": "jednemu",
-            "gen": "jednego",
-        }
-        sg_end = SG[case]
-        pl_end = PL[case]
-        one = ONE[case]
-        quant_end = pl_end
-        if case == "loc" and number.endswith("ard"):
-            sg_end = "zie"
-    graph = pynutil.add_weight(pynini.cross("001", f"{number}{sg_end}"), -0.001)
+        case = "nom"
+
+    # fixme
+    graph = pynutil.add_weight(pynini.cross("001", number["sg_nom"]), -0.001)
     if not deterministic:
-        graph |= pynutil.add_weight(pynini.cross("001", f"{one} {number}{sg_end}"), -0.001)
-    graph |= non_zero_pl + pynutil.insert(f" {number}{pl_end}")
-    # hack for the stem change in tysiąc (1000)
-    if number == "tysiąc":
-        number = "tysięc"
-    graph |= non_zero_quant + pynutil.insert(f" {number}{quant_end}")
+        # fixme
+        graph |= pynutil.add_weight(pynini.cross("001", digits_grouped["sg"] + insert_space + number["sg_nom"]), -0.001)
+    if case in ["nom", "acc", "voc"]:
+        graph |= (digits_grouped["pl"] + insert_space + number["pl_nom"])
+        graph |= (digits_grouped["qnt"] + insert_space + number["pl_gen"])
+    else:
+        graph |= (digits_grouped["pl"] | digits_grouped["qnt"]) + insert_space + number[case]
+
     graph |= pynutil.delete("000")
     graph += insert_space
     return graph
@@ -225,6 +189,9 @@ class CardinalFst(GraphFst):
         self.zero_all = get_nominal_graph("data/grammar/noun_nt_ro.tsv", "data/numbers/zero.tsv")
         self.zero_sg = {x.replace("sg_", ""): y for x, y in self.zero_all.items() if x.startswith("sg_")}
 
+        self.get_digits_all(deterministic, jeden_all)
+
+    def get_digits_all(self, deterministic, jeden_all):
         dwa_cases = ["mi_pl_nom", "pl_gen", "pl_dat", "mi_pl_nom", "mi_pl_ins", "pl_gen", "mi_pl_nom"]
         pl_cases = ["mi_pl_nom", "pl_gen", "pl_dat", "mi_pl_nom", "pl_ins", "pl_gen", "mi_pl_nom"]
         qnt_cases = ["mi_pl_nom", "pl_gen", "pl_gen", "mi_pl_nom", "pl_ins", "pl_gen", "mi_pl_nom"]
@@ -253,13 +220,25 @@ class CardinalFst(GraphFst):
             ).optimize()
         
         digit_qnt = {}
+        for idx in range(len(CASES)):
+            digit_qnt[CASES[idx]] = pynini.union(
+                digit_graph["5"][qnt_cases[idx]],
+                digit_graph["6"][qnt_cases[idx]],
+                digit_graph["7"][qnt_cases[idx]],
+                digit_graph["8"][qnt_cases[idx]],
+                digit_graph["9"][qnt_cases[idx]]
+            ).optimize()
 
+        # this gets passed to the make_million function
+        # to generate the plural and quantity forms of millions, billions, etc.
+        digits_grouped = {
+            "sg": jeden_compound,
+            "sg_only": jeden_filt,
+            "pl": digit_pl,
+            "qnt": digit_qnt
+        }
 
-        # zero = pynini.invert(pynini.string_file(get_abs_path("data/numbers/zero.tsv")))
-        # digit = pynini.invert(pynini.string_file(get_abs_path("data/numbers/digit.tsv")))
-        # teen = pynini.invert(pynini.string_file(get_abs_path("data/numbers/teen.tsv")))
-        # ties = pynini.invert(pynini.string_file(get_abs_path("data/numbers/tens.tsv")))
-        # hundreds = pynini.invert(pynini.string_file(get_abs_path("data/numbers/hundreds.tsv")))
+        return digits_grouped
 
         # plural_3digits = NEMO_DIGIT + (NEMO_DIGIT - "1") + pynini.union("2", "3", "4")
         # quantity_3digits = NEMO_DIGIT + pynini.union(
