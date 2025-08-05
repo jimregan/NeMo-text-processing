@@ -23,6 +23,7 @@ from nemo_text_processing.text_normalization.en.graph_utils import (
     insert_space,
 )
 from nemo_text_processing.text_normalization.pl.graph_utils import PL_ALPHA
+from nemo_text_processing.text_normalization.pl.graph_utils import dict_to_graph
 from nemo_text_processing.text_normalization.pl.utils import adjective_inflection, get_abs_path, load_labels
 from nemo_text_processing.text_normalization.pl.taggers.ordinal import complete_paradigm
 from pynini.lib import pynutil
@@ -249,29 +250,6 @@ def get_two_digits_all(digits_grouped, deterministic: bool = True):
     ).optimize()
 
     return two_digits_grouped
-
-
-def dict_to_graph(input_dict: dict, deterministic: bool = True) -> dict:
-    """
-    Converts a nested dictionary of forms to a dict of pynini.FSTs.
-    Example input:
-        {'2': {'mi_pl_ins': ['form1', 'form2'], 'mi_sg_nom': 'form3'}}
-    Output:
-        {'2': {'mi_pl_ins': FST, 'mi_sg_nom': FST}}
-    """
-    graph_dict = {}
-    for key, value in input_dict.items():
-        graph_dict[key] = {}
-        for subkey, subvalue in value.items():
-            if isinstance(subvalue, list):
-                graph = pynini.cross(key, subvalue[0])
-                if not deterministic:
-                    for alt in subvalue[1:]:
-                        graph |= pynini.cross(key, alt)
-            else:
-                graph = pynini.cross(key, subvalue)
-            graph_dict[key][subkey] = graph
-    return graph_dict
 
 
 class CardinalFst(GraphFst):
