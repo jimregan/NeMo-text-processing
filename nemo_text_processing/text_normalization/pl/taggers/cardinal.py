@@ -218,8 +218,18 @@ def get_two_digits_all(digits_grouped, deterministic: bool = True):
     first_key = list(tens_graph_all.keys())[0]
     for key in tens_graph_all[first_key]:
         tens_graph[key] = pynini.union(
-            *[(tens_graph_all[num][key] + zero) for num in tens_graph_all]
+            *[tens_graph_all[num][key] for num in tens_graph_all]
         ).optimize()
+
+    for idx in range(len(CASES)):
+        two_digits_grouped["qnt"][CASES[idx]] |= pynini.union(
+            tens_graph[teens_cases[idx]] + zero,
+            tens_graph[teens_cases[idx]] + insert_space + digits_grouped["sg"][CASES[idx]],
+            tens_graph[teens_cases[idx]] + insert_space + digits_grouped["qnt"][CASES[idx]]
+        )
+        two_digits_grouped["pl"][CASES[idx]] |= (
+            tens_graph[teens_cases[idx]] + insert_space + digits_grouped["pl"][CASES[idx]]
+        )
 
     return two_digits_grouped
 
