@@ -138,6 +138,91 @@ def get_digit_forms(filepath):
     return output
 
 
+def get_digits_all(jeden_all, deterministic):
+    dwa_cases = ["mi_pl_nom", "pl_gen", "pl_dat", "mi_pl_nom", "mi_pl_ins", "pl_gen", "mi_pl_nom"]
+    pl_cases = ["mi_pl_nom", "pl_gen", "pl_dat", "mi_pl_nom", "pl_ins", "pl_gen", "mi_pl_nom"]
+    qnt_cases = ["mi_pl_nom", "pl_gen", "pl_gen", "mi_pl_nom", "pl_ins", "pl_gen", "mi_pl_nom"]
+
+    # jeden (one) does not inflect in compound numbers, so we use the nominative form
+    # e.g., https://www.poradnia-jezykowa.uni.lodz.pl/szczegoly/jeden-w-liczebnikach-wielowyrazowych
+    # but a lot of people get this wrong, so we also include the inflected forms
+    # This is different from Russian; also, jeden in compounds is a quantity, not singular
+    jeden_filt = {}
+    jeden_compound = {}
+    for case in CASES:
+        jeden_filt[case] = jeden_all[f'mi_sg_{case}'].optimize()
+        jeden_compound[case] = pynini.cross("1", "jeden")
+        if not deterministic:
+            jeden_compound[case] |= jeden_all[f'mi_sg_{case}'].optimize()
+    compound_part = pynini.cross("1", digit_graph["1"]["compound"])
+
+    # 2-4 are plural (5-9 are quantities)
+    digit_forms_all = get_digit_forms("data/numbers/digit_forms.tsv")
+    digit_graph = dict_to_graph(digit_forms_all, deterministic=deterministic)
+    digit_pl = {}
+    for idx in range(len(CASES)):
+        digit_pl[CASES[idx]] = pynini.union(
+            digit_graph["2"][dwa_cases[idx]],
+            digit_graph["3"][pl_cases[idx]],
+            digit_graph["4"][pl_cases[idx]]
+        ).optimize()
+    
+    digit_qnt = {}
+    for idx in range(len(CASES)):
+        digit_qnt[CASES[idx]] = pynini.union(
+            digit_graph["5"][qnt_cases[idx]],
+            digit_graph["6"][qnt_cases[idx]],
+            digit_graph["7"][qnt_cases[idx]],
+            digit_graph["8"][qnt_cases[idx]],
+            digit_graph["9"][qnt_cases[idx]]
+        ).optimize()
+
+    # this gets passed to the make_million function
+    # to generate the plural and quantity forms of millions, billions, etc.
+    digits_grouped = {
+        "sg": jeden_compound,
+        "sg_only": jeden_filt,
+        "pl": digit_pl,
+        "qnt": digit_qnt
+    }
+
+    return digits_grouped
+
+
+def get_two_digits_all(digits_grouped, deterministic: bool = True):
+    two_digits_grouped = {}
+    # 0[1-9]
+    for key in digits_grouped:
+        two_digits_grouped[key] = {}
+        for case in CASES:
+            two_digits_grouped[key][case] = pynini.delete("0") + digits_grouped[key][case]
+    # 1[0-9]
+    teens_cases = ["mi_pl_nom", "pl_gen", "pl_gen", "mi_pl_nom", "pl_ins", "pl_gen", "mi_pl_nom"]
+    teens_forms_all = get_digit_forms("data/numbers/teens_forms.tsv")
+    teens_graph_all = dict_to_graph(teens_forms_all, deterministic=deterministic)
+    teens_graph = {}
+    first_key = list(teens_graph_all.keys())[0]
+    for key in teens_graph_all[first_key]:
+        teens_graph[key] = pynini.union(
+            *[teens_graph_all[num][key] for num in teens_graph_all]
+        ).optimize()
+
+    for idx in range(len(CASES)):
+        two_digits_grouped["qnt"][CASES[idx]] |= teens_graph[teens_cases[idx]]
+
+    # [2-9][0-9]
+    zero = pynutil.delete("0")
+    tens_forms_all = get_digit_forms("data/numbers/tens_forms.tsv")
+    tens_graph_all = dict_to_graph(tens_forms_all, deterministic=deterministic)
+    tens_graph = {}
+    first_key = list(tens_graph_all.keys())[0]
+    for key in tens_graph_all[first_key]:
+        tens_graph[key] = pynini.union(
+            *[(tens_graph_all[num][key] + zero) for num in tens_graph_all]
+        ).optimize()
+
+    return two_digits_grouped
+
 def dict_to_graph(input_dict: dict, deterministic: bool = True) -> dict:
     """
     Converts a nested dictionary of forms to a dict of pynini.FSTs.
@@ -177,8 +262,6 @@ class CardinalFst(GraphFst):
 
         jeden_all_raw = adjective_inflection("jeden")
         jeden_graph = pynini.cross("1", jeden_all_raw["mi_sg_nom"])
-        # in compound numbers, jeden does not inflect
-        jeden_only = pynini.cross("1", "jeden")
         if not deterministic:
             for key in jeden_all_raw:
                 if key == "mi_sg_nom":
@@ -189,56 +272,8 @@ class CardinalFst(GraphFst):
         self.zero_all = get_nominal_graph("data/grammar/noun_nt_ro.tsv", "data/numbers/zero.tsv")
         self.zero_sg = {x.replace("sg_", ""): y for x, y in self.zero_all.items() if x.startswith("sg_")}
 
-        self.get_digits_all(deterministic)
+        digits_all = get_digits_all(self.jeden_all, deterministic)
 
-    def get_digits_all(self, deterministic):
-        dwa_cases = ["mi_pl_nom", "pl_gen", "pl_dat", "mi_pl_nom", "mi_pl_ins", "pl_gen", "mi_pl_nom"]
-        pl_cases = ["mi_pl_nom", "pl_gen", "pl_dat", "mi_pl_nom", "pl_ins", "pl_gen", "mi_pl_nom"]
-        qnt_cases = ["mi_pl_nom", "pl_gen", "pl_gen", "mi_pl_nom", "pl_ins", "pl_gen", "mi_pl_nom"]
-
-        # jeden (one) does not inflect in compound numbers, so we use the nominative form
-        # e.g., https://www.poradnia-jezykowa.uni.lodz.pl/szczegoly/jeden-w-liczebnikach-wielowyrazowych
-        # but a lot of people get this wrong, so we also include the inflected forms
-        # This is different from Russian; also, jeden in compounds is a quantity, not singular
-        jeden_filt = {}
-        jeden_compound = {}
-        for case in CASES:
-            jeden_filt[case] = self.jeden_all[f'mi_sg_{case}'].optimize()
-            jeden_compound[case] = pynini.cross("1", "jeden")
-            if not deterministic:
-                jeden_compound[case] |= self.jeden_all[f'mi_sg_{case}'].optimize()
-
-        # 2-4 are plural (5-9 are quantities)
-        digit_forms_all = get_digit_forms("data/numbers/digit_forms.tsv")
-        digit_graph = dict_to_graph(digit_forms_all, deterministic=deterministic)
-        digit_pl = {}
-        for idx in range(len(CASES)):
-            digit_pl[CASES[idx]] = pynini.union(
-                digit_graph["2"][dwa_cases[idx]],
-                digit_graph["3"][pl_cases[idx]],
-                digit_graph["4"][pl_cases[idx]]
-            ).optimize()
-        
-        digit_qnt = {}
-        for idx in range(len(CASES)):
-            digit_qnt[CASES[idx]] = pynini.union(
-                digit_graph["5"][qnt_cases[idx]],
-                digit_graph["6"][qnt_cases[idx]],
-                digit_graph["7"][qnt_cases[idx]],
-                digit_graph["8"][qnt_cases[idx]],
-                digit_graph["9"][qnt_cases[idx]]
-            ).optimize()
-
-        # this gets passed to the make_million function
-        # to generate the plural and quantity forms of millions, billions, etc.
-        digits_grouped = {
-            "sg": jeden_compound,
-            "sg_only": jeden_filt,
-            "pl": digit_pl,
-            "qnt": digit_qnt
-        }
-
-        return digits_grouped
 
         # plural_3digits = NEMO_DIGIT + (NEMO_DIGIT - "1") + pynini.union("2", "3", "4")
         # quantity_3digits = NEMO_DIGIT + pynini.union(
