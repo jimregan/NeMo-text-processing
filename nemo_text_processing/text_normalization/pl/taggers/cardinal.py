@@ -154,7 +154,6 @@ def get_digits_all(jeden_all, deterministic):
         jeden_compound[case] = pynini.cross("1", "jeden")
         if not deterministic:
             jeden_compound[case] |= jeden_all[f'mi_sg_{case}'].optimize()
-    compound_part = pynini.cross("1", digit_graph["1"]["compound"])
 
     # 2-4 are plural (5-9 are quantities)
     digit_forms_all = get_digit_forms("data/numbers/digit_forms.tsv")
@@ -177,25 +176,33 @@ def get_digits_all(jeden_all, deterministic):
             digit_graph["9"][qnt_cases[idx]]
         ).optimize()
 
-    # this gets passed to the make_million function
-    # to generate the plural and quantity forms of millions, billions, etc.
+    compound_part = jeden_all["compound"]
+    compound_part |= pynini.union(
+        *[digit_graph[str(x)]["compound"] for x in range(2, 10)]
+    )
+
+
     digits_grouped = {
         "sg": jeden_compound,
         "sg_only": jeden_filt,
         "pl": digit_pl,
-        "qnt": digit_qnt
+        "qnt": digit_qnt,
+        "compound": compound_part,
     }
 
     return digits_grouped
 
 
 def get_two_digits_all(digits_grouped, deterministic: bool = True):
+    zero = pynutil.delete("0")
+
     two_digits_grouped = {}
     # 0[1-9]
     for key in digits_grouped:
         two_digits_grouped[key] = {}
         for case in CASES:
-            two_digits_grouped[key][case] = pynini.delete("0") + digits_grouped[key][case]
+            if key != "compound":
+                two_digits_grouped[key][case] = zero + digits_grouped[key][case]
     # 1[0-9]
     teens_cases = ["mi_pl_nom", "pl_gen", "pl_gen", "mi_pl_nom", "pl_ins", "pl_gen", "mi_pl_nom"]
     teens_forms_all = get_digit_forms("data/numbers/teens_forms.tsv")
@@ -211,7 +218,6 @@ def get_two_digits_all(digits_grouped, deterministic: bool = True):
         two_digits_grouped["qnt"][CASES[idx]] |= teens_graph[teens_cases[idx]]
 
     # [2-9][0-9]
-    zero = pynutil.delete("0")
     tens_forms_all = get_digit_forms("data/numbers/tens_forms.tsv")
     tens_graph_all = dict_to_graph(tens_forms_all, deterministic=deterministic)
     tens_graph = {}
@@ -230,6 +236,17 @@ def get_two_digits_all(digits_grouped, deterministic: bool = True):
         two_digits_grouped["pl"][CASES[idx]] |= (
             tens_graph[teens_cases[idx]] + insert_space + digits_grouped["pl"][CASES[idx]]
         )
+
+    nd_space = pynini.accep("")
+    if not deterministic:
+        nd_space |= insert_space
+
+    two_digits_grouped["compound"] = pynini.union(
+        zero + digits_grouped["compound"],
+        teens_graph["compound"],
+        tens_graph["compound"] + zero,
+        tens_graph["compound"] + nd_space + digits_grouped["compound"]
+    ).optimize()
 
     return two_digits_grouped
 
