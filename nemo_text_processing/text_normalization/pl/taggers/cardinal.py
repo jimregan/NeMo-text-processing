@@ -175,23 +175,23 @@ class CardinalFst(GraphFst):
     def __init__(self, deterministic: bool = True):
         super().__init__(name="cardinal", kind="classify", deterministic=deterministic)
 
-        jeden_all = adjective_inflection("jeden")
-        jeden_graph = pynini.cross("1", jeden_all["mi_sg_nom"])
+        jeden_all_raw = adjective_inflection("jeden")
+        jeden_graph = pynini.cross("1", jeden_all_raw["mi_sg_nom"])
         # in compound numbers, jeden does not inflect
-        jeden_only = pynini.cross("1", jeden_all["mi_sg_nom"])
+        jeden_only = pynini.cross("1", "jeden")
         if not deterministic:
-            for key in jeden_all:
+            for key in jeden_all_raw:
                 if key == "mi_sg_nom":
                     continue
-                jeden_graph |= pynini.cross("1", jeden_all[key])
-        complete_paradigm(jeden_all)
-        self.jeden_all = {a[0]: pynini.cross("1", a[1]) for a in jeden_all.items()}
+                jeden_graph |= pynini.cross("1", jeden_all_raw[key])
+        complete_paradigm(jeden_all_raw)
+        self.jeden_all = {k: pynini.cross("1", jeden_all_raw[k]) for k in jeden_all_raw.keys()}
         self.zero_all = get_nominal_graph("data/grammar/noun_nt_ro.tsv", "data/numbers/zero.tsv")
         self.zero_sg = {x.replace("sg_", ""): y for x, y in self.zero_all.items() if x.startswith("sg_")}
 
-        self.get_digits_all(deterministic, jeden_all)
+        self.get_digits_all(deterministic)
 
-    def get_digits_all(self, deterministic, jeden_all):
+    def get_digits_all(self, deterministic):
         dwa_cases = ["mi_pl_nom", "pl_gen", "pl_dat", "mi_pl_nom", "mi_pl_ins", "pl_gen", "mi_pl_nom"]
         pl_cases = ["mi_pl_nom", "pl_gen", "pl_dat", "mi_pl_nom", "pl_ins", "pl_gen", "mi_pl_nom"]
         qnt_cases = ["mi_pl_nom", "pl_gen", "pl_gen", "mi_pl_nom", "pl_ins", "pl_gen", "mi_pl_nom"]
@@ -203,10 +203,10 @@ class CardinalFst(GraphFst):
         jeden_filt = {}
         jeden_compound = {}
         for case in CASES:
-            jeden_filt[case] = self.jeden_all[f'mi_sg_{case}']
-            jeden_compound[case] = jeden_all[f'mi_sg_nom']
+            jeden_filt[case] = self.jeden_all[f'mi_sg_{case}'].optimize()
+            jeden_compound[case] = pynini.cross("1", "jeden")
             if not deterministic:
-                jeden_compound[case] |= self.jeden_all[f'mi_sg_{case}']
+                jeden_compound[case] |= self.jeden_all[f'mi_sg_{case}'].optimize()
 
         # 2-4 are plural (5-9 are quantities)
         digit_forms_all = get_digit_forms("data/numbers/digit_forms.tsv")
