@@ -237,6 +237,17 @@ def get_two_digits_all(digits_grouped, deterministic: bool = True):
         two_digits_grouped["pl"][CASES[idx]] |= (
             tens_graph[teens_cases[idx]] + insert_space + digits_grouped["pl"][CASES[idx]]
         )
+        # https://aleklasa.pl/gimnazjum/gramatyka/c182-fleksja/odmiana-liczebnikow
+        if deterministic and CASES[idx] == "ins":
+            two_digits_grouped["qnt"][CASES[idx]] |= (
+                zero + digits_grouped["qnt"]["gen"],
+                teens_graph["gen"],
+                tens_graph["gen"] + insert_space + digits_grouped["sg"][CASES[idx]],
+                tens_graph["gen"] + insert_space + digits_grouped["qnt"][CASES[idx]]
+            )
+            two_digits_grouped["pl"][CASES[idx]] |= (
+                tens_graph["gen"] + insert_space + digits_grouped["pl"][CASES[idx]]
+            )
 
     nd_space = pynini.accep("")
     if not deterministic:
