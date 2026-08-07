@@ -242,6 +242,10 @@ class CardinalFst(GraphFst):
                 jeden_compound[case] |= self.jeden_all[f'mi_sg_{case}']
 
         # 2-4 are plural (5-9 are quantities)
+        # TSV order sets the deterministic default; later forms are kept only in
+        # non-deterministic mode. Makùrôt (2016, p. 91) gives dative
+        # trzem/sztërzem and instrumental trzema/sztërzema, while Słoworz and
+        # Wiktionary also attest competing short/long forms for these cases.
         digit_forms_all = get_digit_forms("data/numbers/digit_forms.tsv")
         digit_graph = dict_to_graph(digit_forms_all, deterministic=deterministic)
         digit_pl = {}
