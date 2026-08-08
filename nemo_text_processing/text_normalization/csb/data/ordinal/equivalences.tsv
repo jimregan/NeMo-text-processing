@@ -21,6 +21,7 @@ nt_sg_acc	nt_sg_nom
 nt_sg_ins	mi_sg_ins
 nt_sg_loc	mi_sg_loc
 nt_sg_voc	nt_sg_nom
+f_sg_acc	f_sg_ins
 f_sg_dat	f_sg_gen
 f_sg_loc	f_sg_gen
 f_sg_voc	f_sg_nom

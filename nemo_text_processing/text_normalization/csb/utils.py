@@ -53,68 +53,69 @@ def adjective_inflection(word: str, compound: str = "") -> dict:
             stem_b = stem
         if compound == "":
             compound = stem_b + "o"
+
+        # Soft stems have -ich; hard stems have -ëch.
+        # Makùrôt: soft stems end in ń, cz, dż, sz, ż.
+        pl_vowel = "i" if stem.endswith(("ń", "cz", "dż", "sz", "ż")) else "ë"
+
         return {
             "mi_sg_nom": mi_sg,
             "mi_sg_gen": stem + "égò",
             "mi_sg_dat": stem + "émù",
             "mi_sg_ins": stem + vowel + "m",
-            "nt_sg_nom": stem + "o",
-            "f_sg_nom": stem_b + "a",
-            "f_sg_gen": stem + "y",
-            "f_sg_acc": stem_b + "ã",
+
+            "nt_sg_nom": stem + "é",
+
+            "f_sg_nom": stem_b + "ô",
+            "f_sg_gen": stem + vowel,
             "f_sg_ins": stem_b + "ą",
+
             "mp_pl_nom": mp_pl,
+
+            "pl_nom": stem + "é",
             "pl_ins": stem + vowel + "ma",
-            "pl_loc": stem + "ëch",
+            "pl_loc": stem + pl_vowel + "ch",
+
             "compound": compound,
         }
 
     stem_b = ""
-    if word.endswith("en"):
-        stem = word[:-2] + "n"
-        mi_sg = word
-        mp_pl = stem + "y"
-        vowel = "y"
-    elif word[-2:] in ["ni", "ci"]:
-        stem = word
+
+    if word.endswith("czi"):
+        # e.g. kaszëbsczi -> kaszëbskô
+        #      dzyrsczi   -> dzyrskô
+        stem = word[:-1]
+        stem_b = word[:-3] + "k"
         mi_sg = word
         mp_pl = word
-        vowel = ""
-    elif word.endswith("ony"):
+        vowel = "i"
+
+    elif word.endswith("dżi"):
+        # e.g. drëdżi -> drëgô
+        #      wiôldżi -> wiôlgô
+        stem = word[:-1]
+        stem_b = word[:-3] + "g"
+        mi_sg = word
+        mp_pl = word
+        vowel = "i"
+
+    elif word.endswith("i"):
         stem = word[:-1]
         mi_sg = word
-        mp_pl = word[:-3] + "eni"
-        vowel = "y"
-    elif word.endswith("szy"):
-        stem = word[:-1]
-        mi_sg = word
-        mp_pl = word[:-2] + "i"
-        vowel = "y"
-    elif word.endswith("gi"):
-        stem = word
-        stem_b = word[:-1]
-        mi_sg = word
-        mp_pl = word[:-2] + "dzy"
-        vowel = ""
-    elif word.endswith("ki"):
-        stem = word
-        stem_b = word[:-1]
-        mi_sg = word
-        mp_pl = word[:-2] + "cy"
-        vowel = ""
-    elif word.endswith("sty"):
-        stem = word[:-1]
-        mi_sg = word
-        mp_pl = word[:-3] + "ści"
-        vowel = "y"
-    elif word.endswith("ty"):
-        stem = word[:-1]
-        mi_sg = word
-        mp_pl = word[:-2] + "ci"
-        vowel = "y"
+        mp_pl = word
+        vowel = "i"
+
     elif word.endswith("y"):
         stem = word[:-1]
         mi_sg = word
-        mp_pl = word[:-1] + "i"
+        mp_pl = word
         vowel = "y"
-    return fill_bare_template(stem, mi_sg, mp_pl, vowel, stem_b, compound)
+
+    else:
+        raise ValueError(f"Unrecognised adjective ending: {word}")
+
+    forms = fill_bare_template(
+        stem, mi_sg, mp_pl, vowel, stem_b, compound
+    )
+
+    return forms
