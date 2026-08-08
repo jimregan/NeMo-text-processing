@@ -32,9 +32,13 @@ def complete_paradigm(partial: Dict[str, str], complete: bool = False):
                     partial[key] = partial[f"pl_{case}"]
 
 
-def make_graph_dict(filepath: str, invert: bool = True, complete: bool = False):
+def make_graph_dict(filepath: str, invert: bool = True, complete: bool = False, deterministic: bool = True):
     output = {}
+    seen_targets = set()
     for word, target in load_labels(get_abs_path(filepath)):
+        if deterministic and target in seen_targets:
+            continue
+        seen_targets.add(target)
         forms = adjective_inflection(word)
         if complete:
             complete_paradigm(forms, complete=True)
@@ -51,10 +55,10 @@ class OrdinalFst(GraphFst):
     def __init__(self, deterministic: bool = True):
         super().__init__(name="ordinal", kind="classify", deterministic=deterministic)
 
-        digits = make_graph_dict("data/ordinal/digit.tsv", complete=True)
-        tens = make_graph_dict("data/ordinal/tens.tsv", complete=True)
-        teens = make_graph_dict("data/ordinal/teens.tsv", complete=True)
-        hundreds = make_graph_dict("data/ordinal/hundreds.tsv", complete=True)
+        digits = make_graph_dict("data/ordinal/digit.tsv", complete=True, deterministic=deterministic)
+        tens = make_graph_dict("data/ordinal/tens.tsv", complete=True, deterministic=deterministic)
+        teens = make_graph_dict("data/ordinal/teens.tsv", complete=True, deterministic=deterministic)
+        hundreds = make_graph_dict("data/ordinal/hundreds.tsv", complete=True, deterministic=deterministic)
         cardinal_hundreds = pynini.invert(pynini.string_file(get_abs_path("data/numbers/hundreds.tsv"))).optimize()
 
         self.graphs = {}
