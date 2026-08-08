@@ -19,7 +19,7 @@ from pynini.lib import pynutil
 
 from nemo_text_processing.text_normalization.en.graph_utils import NEMO_DIGIT, NEMO_SIGMA, GraphFst, delete_space
 from nemo_text_processing.text_normalization.csb.graph_utils import CSB_ALPHA
-from nemo_text_processing.text_normalization.csb.utils import adjective_inflection, get_abs_path, load_labels
+from nemo_text_processing.text_normalization.csb.utils import get_abs_path, load_labels
 
 CASES = ["nom", "gen", "dat", "acc", "ins", "loc", "voc"]
 DEFAULT_SLOT = "mi_sg_nom"
@@ -132,11 +132,11 @@ class CardinalFst(GraphFst):
         teen = _invert_string_file("data/numbers/teen.tsv")
         teen_compound = _invert_string_file("data/numbers/teen_prefix.tsv")
 
-        jeden = adjective_inflection("jeden", compound="jedno")
-        from nemo_text_processing.text_normalization.csb.taggers.ordinal import complete_paradigm
-
-        complete_paradigm(jeden, complete=True)
-        self.jeden_all = {slot: pynini.cross("1", form) for slot, form in jeden.items()}
+        jeden_forms = get_digit_forms("data/grammar/jeden.tsv")["1"]
+        self.jeden_forms = {
+            slot: forms[0] if isinstance(forms, list) else forms for slot, forms in jeden_forms.items()
+        }
+        self.jeden_all = _forms_to_graphs({"1": jeden_forms}, deterministic)["1"]
 
         zero_forms = {
             "sg_nom": "zero",
@@ -150,7 +150,7 @@ class CardinalFst(GraphFst):
         self.zero_all = {slot: pynini.cross("0", form) for slot, form in zero_forms.items()}
         self.zero_sg = {slot[3:]: graph for slot, graph in self.zero_all.items()}
 
-        ordinary_slots = set(self.jeden_all)
+        ordinary_slots = set(self.jeden_all).difference({"fixed"})
         for forms in digit_forms.values():
             ordinary_slots.update(forms)
 
@@ -262,7 +262,7 @@ class CardinalFst(GraphFst):
         if not compound:
             return self.jeden_all[slot]
         case = _case_for_slot(slot)
-        graph = pynini.cross("1", "jeden")
+        graph = self.jeden_all["fixed"]
         if not deterministic:
             key = slot if slot in self.jeden_all else f"mi_sg_{case}"
             graph |= pynutil.add_weight(self.jeden_all[key], 0.001)
@@ -313,7 +313,10 @@ class CardinalFst(GraphFst):
                     | non_one_group + pynutil.insert(" " + forms[f"pl_{case}"] + " ")
                 )
             if not deterministic:
-                factor |= pynutil.add_weight(pynini.cross("001", "jeden " + forms[f"sg_{case}"] + " "), 0.001)
+                factor |= pynutil.add_weight(
+                    pynini.cross("001", self.jeden_forms["mi_sg_nom"] + " " + forms[f"sg_{case}"] + " "),
+                    0.001,
+                )
             factors.append(factor)
 
         padded = (
