@@ -21,21 +21,25 @@ from nemo_text_processing.text_normalization.csb.utils import adjective_inflecti
 
 
 def _load_endings(grammar_file: str) -> Dict[str, str]:
-    return {
-        slot: "" if ending == "<eps>" else ending
-        for slot, ending in load_labels(get_abs_path(f"data/grammar/{grammar_file}"))
-    }
+    endings = {}
+    for slot, ending in load_labels(get_abs_path(f"data/grammar/{grammar_file}")):
+        endings.setdefault(slot, "" if ending == "<eps>" else ending)
+    return endings
 
 
-def inflect_noun(word: str, grammar_file: str) -> Dict[str, str]:
+def inflect_noun(word: str, grammar_file: str, deterministic: bool = True) -> Dict[str, object]:
     """Inflects a noun using a grammar file containing slot-to-ending mappings."""
 
-    endings = _load_endings(grammar_file)
-    lemma_ending = endings["sg_nom"]
+    endings = {}
+    for slot, ending in load_labels(get_abs_path(f"data/grammar/{grammar_file}")):
+        endings.setdefault(slot, []).append("" if ending == "<eps>" else ending)
+    lemma_ending = endings["sg_nom"][0]
     if not word.endswith(lemma_ending):
         raise ValueError(f"{word!r} must end in {lemma_ending!r} from {grammar_file}")
     stem = word[: -len(lemma_ending)] if lemma_ending else word
-    return {slot: stem + ending for slot, ending in endings.items()}
+    if deterministic:
+        return {slot: stem + values[0] for slot, values in endings.items()}
+    return {slot: [stem + ending for ending in values] for slot, values in endings.items()}
 
 
 def case_prepositions() -> Dict[str, 'pynini.FstLike']:

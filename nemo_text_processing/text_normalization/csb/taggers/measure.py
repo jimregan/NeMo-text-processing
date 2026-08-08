@@ -38,8 +38,9 @@ class MeasureFst(GraphFst):
         unit_genders = set()
         for symbol, lemma, gender, grammar_file in load_labels(get_abs_path("data/measures/units.tsv")):
             unit_genders.add(gender)
-            for slot, form in inflect_noun(lemma, grammar_file).items():
-                graph = pynini.cross(symbol, form)
+            for slot, forms in inflect_noun(lemma, grammar_file, deterministic=deterministic).items():
+                forms = [forms] if isinstance(forms, str) else forms
+                graph = pynini.union(*(pynini.cross(symbol, form) for form in forms))
                 key = (gender, slot)
                 unit_graphs[key] = graph if key not in unit_graphs else unit_graphs[key] | graph
         unit_graphs = {slot: graph.optimize() for slot, graph in unit_graphs.items()}
