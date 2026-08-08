@@ -14,21 +14,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import pynini
-from nemo_text_processing.text_normalization.en.graph_utils import delete_space, insert_space
 from pynini.lib import byte, pynutil
+
+from nemo_text_processing.text_normalization.en.graph_utils import delete_space, insert_space
 
 from .utils import get_abs_path, load_labels
 
-_ALPHA_UPPER = "AĄBCĆDEĘFGHIJKLŁMNŃOÓPQRSŚTUVWXYZŻŹ"
-_ALPHA_LOWER = "aąbcćdeęfghijklłmnńoópqrsśtuvwxyzżź"
+_ALPHA_UPPER = "AĄÃBCĆDEĘÉËFGHIJKLŁMNŃOÒÓÔPQRSŚTUVWÙXYZŻŹ"
+_ALPHA_LOWER = "aąãbcćdeęéëfghijklłmnńoòóôpqrsśtuvwùxyzżź"
 
 TO_LOWER = pynini.union(*[pynini.cross(x, y) for x, y in zip(_ALPHA_UPPER, _ALPHA_LOWER)])
 TO_UPPER = pynini.invert(TO_LOWER)
 
-PL_LOWER = pynini.union(*_ALPHA_LOWER).optimize()
-PL_UPPER = pynini.union(*_ALPHA_UPPER).optimize()
-PL_ALPHA = pynini.union(PL_LOWER, PL_UPPER).optimize()
-PL_ALNUM = pynini.union(byte.DIGIT, PL_ALPHA).optimize()
+CSB_LOWER = pynini.union(*_ALPHA_LOWER).optimize()
+CSB_UPPER = pynini.union(*_ALPHA_UPPER).optimize()
+CSB_ALPHA = pynini.union(CSB_LOWER, CSB_UPPER).optimize()
+CSB_ALNUM = pynini.union(byte.DIGIT, CSB_ALPHA).optimize()
 
 bos_or_space = pynini.union("[BOS]", " ")
 eos_or_space = pynini.union("[EOS]", " ")
