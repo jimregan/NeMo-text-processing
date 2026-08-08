@@ -55,16 +55,17 @@ def adjective_inflection(word: str, compound: str = "") -> dict:
             compound = stem_b + "o"
         return {
             "mi_sg_nom": mi_sg,
-            "mi_sg_gen": stem + "ego",
-            "mi_sg_dat": stem + "emu",
+            "mi_sg_gen": stem + "égò",
+            "mi_sg_dat": stem + "émù",
             "mi_sg_ins": stem + vowel + "m",
-            "nt_sg_nom": stem + "e",
+            "nt_sg_nom": stem + "o",
             "f_sg_nom": stem_b + "a",
-            "f_sg_gen": stem + "ej",
+            "f_sg_gen": stem + "y",
+            "f_sg_acc": stem_b + "ã",
             "f_sg_ins": stem_b + "ą",
             "mp_pl_nom": mp_pl,
-            "pl_ins": stem + vowel + "mi",
-            "pl_loc": stem + vowel + "ch",
+            "pl_ins": stem + vowel + "ma",
+            "pl_loc": stem + "ëch",
             "compound": compound,
         }
 
@@ -72,7 +73,7 @@ def adjective_inflection(word: str, compound: str = "") -> dict:
     if word.endswith("en"):
         stem = word[:-2] + "n"
         mi_sg = word
-        mp_pl = stem + "i"
+        mp_pl = stem + "y"
         vowel = "y"
     elif word[-2:] in ["ni", "ci"]:
         stem = word
