@@ -36,8 +36,8 @@ from pynini.lib import pynutil
 zero = pynini.invert(pynini.string_file(get_abs_path("data/numbers/zero.tsv")))
 zero_count = pynini.invert(pynini.string_file(get_abs_path("data/numbers/zero_count.tsv")))
 digit_count = pynini.invert(pynini.string_file(get_abs_path("data/numbers/digit_count.tsv")))
-teen = pynini.invert(pynini.string_file(get_abs_path("data/numbers/teens_count.tsv")))
-teen_noncount = pynini.invert(pynini.string_file(get_abs_path("data/numbers/teens_noncount.tsv")))
+teen_maoluimhir = pynini.invert(pynini.string_file(get_abs_path("data/numbers/teens_count.tsv")))
+teen_bunuimhir = pynini.invert(pynini.string_file(get_abs_path("data/numbers/teens_noncount.tsv")))
 ties = pynini.invert(pynini.string_file(get_abs_path("data/numbers/tens.tsv")))
 
 
@@ -265,46 +265,48 @@ class CardinalFst(GraphFst):
         digits_no_one = (NEMO_DIGIT - "1") @ graph_digit
 
         # Any double digit
-        base_tens = teen
-        base_tens |= ties + (pynutil.delete('0') | insert_space + graph_digit)
+        tens_maoluimhir = teen_maoluimhir
+        tens_maoluimhir |= ties + (pynutil.delete('0') | insert_space + graph_digit)
         if not deterministic:
-            base_tens |= ties + (pynutil.delete('0') | (pynutil.insert(" is ") + graph_digit))
+            tens_maoluimhir |= ties + (pynutil.delete('0') | (pynutil.insert(" is ") + graph_digit))
 
-        self.tens = base_tens.optimize()
+        self.tens_maoluimhir = tens_maoluimhir.optimize()
+        self.tens = self.tens_maoluimhir
 
-        graph_tens = teen_noncount
-        graph_tens |= ties + (pynutil.delete('0') | insert_space + graph_digit)
-        if not deterministic:
-            graph_tens |= ties + (pynutil.delete('0') | (pynutil.insert(" is ") + graph_digit))
+        tens_bunuimhir = teen_bunuimhir
+        tens_bunuimhir |= ties + (pynutil.delete('0') | insert_space + graph_digit)
+        self.tens_bunuimhir = tens_bunuimhir.optimize()
 
         self.two_digit_non_zero = pynini.union(
-            graph_digit, base_tens, (pynini.cross("0", NEMO_SPACE) + graph_digit)
+            graph_digit, tens_maoluimhir, (pynini.cross("0", NEMO_SPACE) + graph_digit)
         ).optimize()
 
         # Three digit strings
         hundreds = make_number_form("céad")
         graph_hundreds = hundreds + pynini.union(
-            pynutil.delete("00"), (insert_space + base_tens), (pynini.cross("0", NEMO_SPACE) + graph_digit)
+            pynutil.delete("00"),
+            (insert_space + tens_maoluimhir),
+            (pynini.cross("0", NEMO_SPACE) + graph_digit),
         )
         if not deterministic:
             graph_hundreds |= hundreds + pynutil.insert(" is") + pynini.cross("0", NEMO_SPACE) + graph_digit
-            graph_hundreds |= hundreds + pynutil.insert(" is ") + base_tens
+            graph_hundreds |= hundreds + pynutil.insert(" is ") + tens_maoluimhir
             graph_hundreds = graph_hundreds @ pynini.cdrewrite(
                 pynini.cross("is is", "is"), eos_or_space, bos_or_space, NEMO_SIGMA
             )
 
         self.hundreds = graph_hundreds.optimize()
-        self.up_to_three_digits = self.hundreds | base_tens | graph_digit
+        self.up_to_three_digits = self.hundreds | tens_maoluimhir | graph_digit
         self.three_digit_non_zero = pynini.union(
             graph_digit,
             self.hundreds,
-            base_tens,
-            (pynini.cross("0", NEMO_SPACE) + base_tens),
+            tens_maoluimhir,
+            (pynini.cross("0", NEMO_SPACE) + tens_maoluimhir),
             (pynini.cross("00", NEMO_SPACE) + graph_digit),
         ).optimize()
 
         # For all three digit strings with leading zeroes (graph appends '0's to manage place in string)
-        graph_hundreds_component = pynini.union(graph_hundreds, pynutil.delete("0") + graph_tens)
+        graph_hundreds_component = pynini.union(graph_hundreds, pynutil.delete("0") + tens_maoluimhir)
 
         graph_hundreds_component_at_least_one_non_zero_digit = graph_hundreds_component | (
             pynutil.delete("00") + graph_digit
