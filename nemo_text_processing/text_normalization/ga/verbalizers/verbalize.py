@@ -20,9 +20,9 @@ from nemo_text_processing.text_normalization.es.verbalizers.electronic import El
 from nemo_text_processing.text_normalization.es.verbalizers.fraction import FractionFst
 from nemo_text_processing.text_normalization.es.verbalizers.measure import MeasureFst
 from nemo_text_processing.text_normalization.es.verbalizers.money import MoneyFst
-from nemo_text_processing.text_normalization.es.verbalizers.ordinal import OrdinalFst
 from nemo_text_processing.text_normalization.es.verbalizers.telephone import TelephoneFst
 from nemo_text_processing.text_normalization.es.verbalizers.time import TimeFst
+from nemo_text_processing.text_normalization.ga.verbalizers.ordinal import OrdinalFst
 
 
 class VerbalizeFst(GraphFst):

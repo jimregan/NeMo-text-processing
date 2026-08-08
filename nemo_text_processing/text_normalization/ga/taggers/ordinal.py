@@ -14,17 +14,12 @@
 # limitations under the License.
 import pynini
 from nemo_text_processing.text_normalization.en.graph_utils import (
-    NEMO_ALPHA,
-    NEMO_DIGIT,
     NEMO_SIGMA,
     NEMO_SPACE,
-    NEMO_WHITE_SPACE,
     GraphFst,
-    delete_space,
     insert_space,
 )
 from nemo_text_processing.text_normalization.ga.graph_utils import PREFIX_H, PREFIX_T
-from nemo_text_processing.text_normalization.ga.taggers.cardinal import filter_punctuation, make_million_maol_cnm
 from nemo_text_processing.text_normalization.ga.utils import get_abs_path
 from pynini.lib import pynutil
 
@@ -164,8 +159,49 @@ class OrdinalFst(GraphFst):
         super().__init__(name="ordinal", kind="classify")
         digit = pynini.invert(pynini.string_file(get_abs_path("data/ordinals/digit.tsv")))
         ties = pynini.invert(pynini.string_file(get_abs_path("data/ordinals/tens.tsv")))
+        cardinal_tens = pynini.invert(pynini.string_file(get_abs_path("data/numbers/tens.tsv")))
         zero = pynini.invert(pynini.string_file(get_abs_path("data/ordinals/zero.tsv")))
         digit_higher = pynini.invert(pynini.string_file(get_abs_path("data/ordinals/digit_higher.tsv")))
 
-        final_graph = self.add_tokens(digit)
+        digit_single = pynini.union(pynini.cross("1", "céad"), pynini.cross("2", "dara"), digit)
+        digit_compound = digit_higher | digit
+        ten = pynini.cross("10", "deichiú")
+        teens = pynutil.delete("1") + digit_compound + pynutil.insert(" déag")
+        exact_tens = ties + pynutil.delete("0")
+        compound_tens = pynini.Fst()
+        for tens_digit in range(2, 10):
+            tens_digit = str(tens_digit)
+            tens_word = tens_digit @ cardinal_tens
+            compound_tens |= (
+                pynutil.delete(tens_digit) + digit_compound + pynutil.insert(" is ") + pynutil.insert(tens_word)
+            )
+
+        self.graph = (zero | digit_single | ten | teens | exact_tens | compound_tens).optimize()
+
+        suffixed_digits = load_digits(deterministic_itn=deterministic, endings=True)
+        suffixed_digit = suffixed_digits["digit_h"] | suffixed_digits["digit_d"]
+        suffixed_digit_compound = suffixed_digits["digit_h"]
+        delete_ordinal_suffix = pynutil.delete("ú")
+        if not deterministic:
+            delete_ordinal_suffix |= pynutil.delete("adh")
+        suffixed_ten = pynini.cross("10", "deichiú") + delete_ordinal_suffix
+        suffixed_teens = pynutil.delete("1") + suffixed_digit_compound + pynutil.insert(" déag")
+        suffixed_exact_tens = ties + pynutil.delete("0") + delete_ordinal_suffix
+        suffixed_compound_tens = pynini.Fst()
+        for tens_digit in range(2, 10):
+            tens_digit = str(tens_digit)
+            tens_word = tens_digit @ cardinal_tens
+            suffixed_compound_tens |= (
+                pynutil.delete(tens_digit)
+                + suffixed_digit_compound
+                + pynutil.insert(" is ")
+                + pynutil.insert(tens_word)
+            )
+
+        self.suffixed_to_words = (
+            suffixed_digit | suffixed_ten | suffixed_teens | suffixed_exact_tens | suffixed_compound_tens
+        ).optimize()
+
+        ordinal = self.graph + pynutil.delete(".") | self.suffixed_to_words
+        final_graph = self.add_tokens(pynutil.insert('integer: "') + ordinal + pynutil.insert('"'))
         self.fst = final_graph.optimize()
