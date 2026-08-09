@@ -24,17 +24,17 @@ from pynini.lib import pynutil
 
 class DecimalFst(GraphFst):
     """
-	Finite state transducer for classifying decimal, e.g.
-		decimal { negative: "true" integer_part: "dos"  fractional_part: "cuatro cero" quantity: "billones" } -> menos dos coma quatro cero billones
-		decimal { integer_part: "un" quantity: "billón" } -> un billón
+    Finite state transducer for verbalizing decimals, e.g.
+        decimal { integer_part: "a haon" fractional_part: "a seacht" } -> a haon ponc a seacht
+        decimal { negative: "true" integer_part: "a dó" fractional_part: "a náid a ceathair" } -> lúide a dó ponc a náid a ceathair
 
     Args:
-		deterministic: if True will provide a single transduction option,
-			for False multiple transduction are generated (used for audio-based normalization)
-	"""
+        deterministic: if True will provide a single transduction option,
+            for False multiple transduction are generated (used for audio-based normalization)
+    """
 
     def __init__(self, deterministic: bool = True):
-        super().__init__(name="decimal", kind="classify", deterministic=deterministic)
+        super().__init__(name="decimal", kind="verbalize", deterministic=deterministic)
 
         optional_sign = pynini.closure(pynini.cross("negative: \"true\"", "lúide ") + delete_space, 0, 1)
         integer = pynutil.delete("integer_part: \"") + pynini.closure(NEMO_NOT_QUOTE, 1) + pynutil.delete("\"")
@@ -44,6 +44,8 @@ class DecimalFst(GraphFst):
 
         self.integer = integer
         conjunction = pynutil.insert(" ponc ")
+        if not deterministic:
+            conjunction |= pynutil.insert(" pointe ")
         fractional = conjunction + fractional_default
 
         quantity = (

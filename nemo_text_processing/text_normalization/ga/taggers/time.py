@@ -14,6 +14,8 @@
 # limitations under the License.
 
 
+import os
+
 import pynini
 from nemo_text_processing.text_normalization.en.graph_utils import (
     NEMO_DIGIT,
@@ -45,12 +47,18 @@ class TimeFst(GraphFst):
         cardinal: CardinalFst
         deterministic: if True will provide a single transduction option,
             for False multiple transduction are generated (used for audio-based normalization)
+        dialect: Irish dialect code; one of "co", "gm", or "gc"
     """
 
-    def __init__(self, cardinal: GraphFst, deterministic: bool = True):
+    def __init__(self, cardinal: GraphFst, deterministic: bool = True, dialect: str = "co"):
         super().__init__(name="time", kind="classify", deterministic=deterministic)
+        half_past_relations = dict(load_labels(get_abs_path("data/time/half_past.tsv")))
+        if dialect not in half_past_relations:
+            raise ValueError(f"Unsupported Irish dialect for time normalization: {dialect}")
+
         suffix_graph = pynini.string_map(load_labels(get_abs_path("data/time/suffix.tsv")))
-        time_zone_graph = pynini.string_file(get_abs_path("data/time/time_zone.tsv"))
+        time_zone_path = get_abs_path("data/time/time_zone.tsv")
+        time_zone_graph = pynini.string_file(time_zone_path) if os.path.exists(time_zone_path) else pynini.Fst()
 
         # only used for < 1000 thousand -> 0 weight
         cardinal = cardinal.graph
@@ -68,6 +76,22 @@ class TimeFst(GraphFst):
         klockan_graph_piece = pynutil.insert("hours: \"") + klockan
 
         graph_hour = delete_leading_zero_to_double_digit @ pynini.union(*labels_hour) @ cardinal
+
+        if deterministic:
+            half_past_relation = pynutil.insert(half_past_relations[dialect])
+        else:
+            half_past_relation = pynini.union(
+                *[pynutil.insert(relation) for relation in dict.fromkeys(half_past_relations.values())]
+            )
+        half_past = (
+            pynutil.insert('text: "leathuair ')
+            + half_past_relation
+            + pynutil.insert(" ")
+            + graph_hour
+            + pynutil.delete(pynini.union(":", "."))
+            + pynutil.delete("30")
+            + pynutil.insert('"')
+        )
 
         graph_minute_single = pynini.union(*labels_minute_single) @ cardinal
         graph_minute_double = pynini.union(*labels_minute_double) @ cardinal
@@ -187,7 +211,7 @@ class TimeFst(GraphFst):
         graph_h |= klockan_hour_graph + ins_minutes + final_suffix_optional + final_time_zone_optional
         self.graph_h = graph_h
 
-        final_graph = (graph_hm | graph_h | graph_hms).optimize() @ pynini.cdrewrite(
+        final_graph = (half_past | graph_hm | graph_h | graph_hms).optimize() @ pynini.cdrewrite(
             delete_extra_space, "", "", NEMO_SIGMA
         )
 

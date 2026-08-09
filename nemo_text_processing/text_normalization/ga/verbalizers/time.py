@@ -74,6 +74,7 @@ class TimeFst(GraphFst):
             + pynini.closure(NEMO_NOT_QUOTE, 1)
             + pynutil.delete("\"")
         )
+        text = pynutil.delete("text:") + delete_space + pynutil.delete('"') + ANY_NOT_QUOTE + pynutil.delete('"')
         # graph_hms = (
         #     hour
         #     + pynutil.insert(" hours ")
@@ -95,7 +96,8 @@ class TimeFst(GraphFst):
         #     "",
         #     NEMO_SIGMA,
         # )
-        graph = hour + NEMO_SPACE + minute + optional_suffix + optional_zone
+        graph = text
+        graph |= hour + NEMO_SPACE + minute + optional_suffix + optional_zone
         graph |= hour + NEMO_SPACE + minute + NEMO_SPACE + second + optional_suffix + optional_zone
         graph |= hour + NEMO_SPACE + suffix + optional_zone
         graph |= hour + optional_zone

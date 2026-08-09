@@ -99,6 +99,7 @@ class Normalizer:
         max_number_of_permutations_per_split: a maximum number
             of permutations which can be generated from input sequence of tokens.
         verbose: whether to print intermediate meta information
+        dialect: spoken dialect for dialect-sensitive grammars. Irish supports ``co``, ``gm``, and ``gc``.
     """
 
     def __init__(
@@ -112,6 +113,7 @@ class Normalizer:
         lm: bool = False,
         post_process: bool = True,
         max_number_of_permutations_per_split: int = 729,
+        dialect: str = None,
     ):
         assert input_case in ["lower_cased", "cased"]
 
@@ -181,13 +183,16 @@ class Normalizer:
             raise NotImplementedError(f"Language {lang} has not been supported yet.")
 
         self.input_case = input_case
-        self.tagger = ClassifyFst(
+        classify_kwargs = dict(
             input_case=self.input_case,
             deterministic=deterministic,
             cache_dir=cache_dir,
             overwrite_cache=overwrite_cache,
             whitelist=whitelist,
         )
+        if lang == 'ga':
+            classify_kwargs['dialect'] = dialect or 'co'
+        self.tagger = ClassifyFst(**classify_kwargs)
 
         self.verbalizer = VerbalizeFinalFst(
             deterministic=deterministic, cache_dir=cache_dir, overwrite_cache=overwrite_cache
@@ -195,6 +200,7 @@ class Normalizer:
         self.max_number_of_permutations_per_split = max_number_of_permutations_per_split
         self.parser = TokenParser()
         self.lang = lang
+        self.dialect = dialect
         self.moses_detokenizer = MosesDetokenizer(lang=lang)
 
     def normalize_list(
@@ -723,7 +729,7 @@ def parse_args():
     parser.add_argument(
         "--language",
         help="language",
-        choices=["en", "de", "es", "fr", "hu", "sv", "zh", "ar", "it", "hy", "ja", "hi"],
+        choices=["en", "de", "es", "fr", "hu", "sv", "ga", "zh", "ar", "it", "hy", "ja", "hi"],
         default="en",
         type=str,
     )
@@ -736,6 +742,13 @@ def parse_args():
         type=str,
     )
     parser.add_argument("--verbose", help="print info for debugging", action='store_true')
+    parser.add_argument(
+        "--dialect",
+        help="Spoken dialect used by dialect-sensitive grammars (Irish: co, gm, or gc)",
+        choices=["co", "gm", "gc"],
+        default=None,
+        type=str,
+    )
     parser.add_argument(
         "--no_post_process",
         help="WFST-based post processing, e.g. to remove extra spaces added during TN, normalize punctuation marks [could differ from the input]. Only Eng is supported, not supported in Sparrowhawk",
@@ -791,6 +804,7 @@ if __name__ == "__main__":
         whitelist=whitelist,
         lang=args.language,
         max_number_of_permutations_per_split=args.max_number_of_permutations_per_split,
+        dialect=args.dialect,
     )
     start_time = perf_counter()
     if args.input_string:

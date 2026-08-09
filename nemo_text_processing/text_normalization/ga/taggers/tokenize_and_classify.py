@@ -54,6 +54,7 @@ class ClassifyFst(GraphFst):
         cache_dir: path to a dir with .far grammar file. Set to None to avoid using cache.
         overwrite_cache: set to True to overwrite .far files
         whitelist: path to a file with whitelist replacements
+        dialect: Irish dialect code used for dialect-dependent expressions
     """
 
     def __init__(
@@ -63,6 +64,7 @@ class ClassifyFst(GraphFst):
         cache_dir: str = None,
         overwrite_cache: bool = False,
         whitelist: str = None,
+        dialect: str = "co",
     ):
         super().__init__(name="tokenize_and_classify", kind="classify", deterministic=deterministic)
 
@@ -71,7 +73,8 @@ class ClassifyFst(GraphFst):
             os.makedirs(cache_dir, exist_ok=True)
             whitelist_file = os.path.basename(whitelist) if whitelist else ""
             far_file = os.path.join(
-                cache_dir, f"ga_tn_{deterministic}_deterministic_{input_case}_{whitelist_file}_tokenize.far"
+                cache_dir,
+                f"ga_tn_{dialect}_{deterministic}_deterministic_{input_case}_{whitelist_file}_tokenize.far",
             )
         if not overwrite_cache and far_file and os.path.exists(far_file):
             self.fst = pynini.Far(far_file, mode="r")["tokenize_and_classify"]
@@ -105,11 +108,13 @@ class ClassifyFst(GraphFst):
             logging.debug(f"measure: {time.time() - start_time: .2f}s -- {measure_graph.num_states()} nodes")
 
             start_time = time.time()
-            date_graph = DateFst(cardinal=cardinal, ordinal=ordinal, deterministic=deterministic).fst
+            date_graph = DateFst(
+                cardinal=cardinal, ordinal=ordinal, deterministic=deterministic, dialect=dialect
+            ).fst
             logging.debug(f"date: {time.time() - start_time: .2f}s -- {date_graph.num_states()} nodes")
 
             start_time = time.time()
-            time_graph = TimeFst(cardinal=cardinal, deterministic=deterministic).fst
+            time_graph = TimeFst(cardinal=cardinal, deterministic=deterministic, dialect=dialect).fst
             logging.debug(f"time: {time.time() - start_time: .2f}s -- {time_graph.num_states()} nodes")
 
             start_time = time.time()

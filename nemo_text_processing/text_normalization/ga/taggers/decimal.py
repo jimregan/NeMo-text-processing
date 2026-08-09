@@ -1,5 +1,5 @@
 # Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
-# Copyright (c) 2023, Jim O'Regan for Språkbanken Tal
+# Copyright (c) 2023, 2026, Jim O'Regan
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,168 +14,43 @@
 # limitations under the License.
 
 import pynini
-from nemo_text_processing.text_normalization.en.graph_utils import GraphFst
-from nemo_text_processing.text_normalization.ga.utils import get_abs_path
 from pynini.lib import pynutil
 
-quantities = pynini.string_file(get_abs_path("data/numbers/millions.tsv"))
-quantities_abbr = pynini.string_file(get_abs_path("data/numbers/millions_abbr.tsv"))
-
-
-def get_quantity(
-    decimal: 'pynini.FstLike',
-    decimal_ett: 'pynini.FstLike',
-    cardinal_up_to_thousand: 'pynini.FstLike',
-    cardinal_up_to_thousand_ett: 'pynini.FstLike',
-    include_abbr: bool,
-) -> 'pynini.FstLike':
-    """
-    Returns FST that transforms either a cardinal or decimal followed by a quantity into a numeral,
-    e.g. 1 miljon -> integer_part: "en" quantity: "miljon"
-    e.g. 1,5 miljoner -> integer_part: "en" fractional_part: "fem" quantity: "miljoner"
-
-    Args:
-        decimal: decimal FST
-        cardinal_up_to_hundred: cardinal FST
-    """
-    quantities_pl = quantities + "er"
-    # This is odd, but it's so we can accept miljard for miljarder
-    quantities_pl |= quantities + pynutil.insert("er")
-
-    if include_abbr:
-        quantity = quantities | quantities_abbr
-        quantities_pl |= quantities_abbr + pynutil.insert("er")
-    else:
-        quantity = quantities
-
-    res = (
-        pynutil.insert("integer_part: \"")
-        + cardinal_up_to_thousand
-        + pynutil.insert("\"")
-        + pynini.closure(pynutil.delete(" "), 0, 1)
-        + pynutil.insert(" quantity: \"")
-        + quantities_pl
-        + pynutil.insert("\"")
-    )
-    res |= (
-        pynutil.insert("integer_part: \"")
-        + cardinal_up_to_thousand_ett
-        + pynutil.insert("\"")
-        + pynini.closure(pynutil.delete(" "), 0, 1)
-        + pynutil.insert(" quantity: \"")
-        + "tusen"
-        + pynutil.insert("\"")
-    )
-    res |= (
-        pynutil.insert("integer_part: \"")
-        + pynini.cross("1", "ett")
-        + pynutil.insert("\"")
-        + pynini.closure(pynutil.delete(" "), 0, 1)
-        + pynutil.insert(" quantity: \"")
-        + "tusen"
-        + pynutil.insert("\"")
-    )
-    res |= (
-        pynutil.insert("integer_part: \"")
-        + pynini.cross("1", "en")
-        + pynutil.insert("\"")
-        + pynini.closure(pynutil.delete(" "), 0, 1)
-        + pynutil.insert(" quantity: \"")
-        + quantity
-        + pynutil.insert("\"")
-    )
-    res |= (
-        pynutil.insert("integer_part: \"")
-        + pynini.cross("1", "en")
-        + pynutil.insert("\"")
-        + pynini.closure(pynutil.delete(" "), 0, 1)
-        + pynutil.insert(" quantity: \"")
-        + quantity
-        + pynutil.insert("\"")
-    )
-    res |= (
-        decimal
-        + pynini.closure(pynutil.delete(" "), 0, 1)
-        + pynutil.insert(" quantity: \"")
-        + quantities_pl
-        + pynutil.insert("\"")
-    )
-    res |= (
-        decimal_ett
-        + pynini.closure(pynutil.delete(" "), 0, 1)
-        + pynutil.insert(" quantity: \"")
-        + "tusen"
-        + pynutil.insert("\"")
-    )
-    return res
+from nemo_text_processing.text_normalization.en.graph_utils import NEMO_DIGIT, GraphFst
 
 
 class DecimalFst(GraphFst):
     """
-    Finite state transducer for classifying decimal, e.g.
-        -12,5006 biljon -> decimal { negative: "true" integer_part: "tolv"  fractional_part: "fem noll noll sex" quantity: "biljon" }
-        1 biljon -> decimal { integer_part: "en" quantity: "biljon" }
+    Finite state transducer for classifying decimals, e.g.
+        "1.7" -> decimal { integer_part: "a haon" fractional_part: "a seacht" }
+        "-2.04" -> decimal { negative: "true" integer_part: "a dó" fractional_part: "a náid a ceathair" }
 
-    cardinal: CardinalFst
+    Args:
+        cardinal: CardinalFst
+        deterministic: if True will provide a single transduction option,
+            for False multiple transduction are generated (used for audio-based normalization)
     """
 
-    def __init__(self, cardinal: GraphFst, deterministic: bool):
+    def __init__(self, cardinal: GraphFst, deterministic: bool = True):
         super().__init__(name="decimal", kind="classify", deterministic=deterministic)
 
-        cardinal_graph = cardinal.graph
-        cardinal_graph_en = cardinal.graph_en
-        cardinal_graph_hundreds_one_non_zero = cardinal.graph_hundreds_component_at_least_one_non_zero_digit_no_one
-        cardinal_graph_hundreds_one_non_zero_en = (
-            cardinal.graph_hundreds_component_at_least_one_non_zero_digit_no_one_en
+        non_zero_integer = ((NEMO_DIGIT - "0") + pynini.closure(NEMO_DIGIT)) @ cardinal.graph
+        integer = pynini.cross("0", "a náid") | non_zero_integer
+        fractional_digits = cardinal.read_digits
+
+        self.graph = fractional_digits
+        self.graph_integer = pynutil.insert('integer_part: "') + integer + pynutil.insert('"')
+        self.graph_fractional = (
+            pynutil.insert('fractional_part: "') + fractional_digits + pynutil.insert('"')
         )
 
-        self.graph = cardinal.two_or_three_digits_read_frac
+        decimal_separator = pynutil.delete(pynini.union(".", ","))
+        integer_part = self.graph_integer | pynutil.insert('integer_part: "a náid"')
+        self.final_graph_wo_sign = integer_part + decimal_separator + pynutil.insert(" ") + self.graph_fractional
+        self.final_graph_wo_negative = self.final_graph_wo_sign
+        self.final_graph_wo_negative_w_abbr = self.final_graph_wo_sign
 
-        if not deterministic:
-            self.graph |= cardinal.single_digits_graph.optimize()
-            self.graph |= cardinal_graph
-
-        point = pynutil.delete(",")
-        optional_graph_negative = pynini.closure(pynutil.insert("negative: ") + pynini.cross("-", "\"true\" "), 0, 1)
-
-        self.graph_fractional = pynutil.insert("fractional_part: \"") + self.graph + pynutil.insert("\"")
-        self.graph_integer = pynutil.insert("integer_part: \"") + cardinal_graph + pynutil.insert("\"")
-        self.graph_integer_en = pynutil.insert("integer_part: \"") + cardinal_graph_en + pynutil.insert("\"")
-        final_graph_wo_sign = (
-            pynini.closure(self.graph_integer + pynutil.insert(" "), 0, 1)
-            + point
-            + pynutil.insert(" ")
-            + self.graph_fractional
+        optional_negative = pynini.closure(
+            pynutil.insert("negative: ") + pynini.cross("-", '"true" '), 0, 1
         )
-        self.final_graph_wo_sign = final_graph_wo_sign
-        final_graph_wo_sign_en = (
-            pynini.closure(self.graph_integer_en + pynutil.insert(" "), 0, 1)
-            + point
-            + pynutil.insert(" ")
-            + self.graph_fractional
-        )
-        self.final_graph_wo_sign_en = final_graph_wo_sign_en
-
-        quantity_w_abbr = get_quantity(
-            final_graph_wo_sign_en,
-            final_graph_wo_sign,
-            cardinal_graph_hundreds_one_non_zero_en,
-            cardinal_graph_hundreds_one_non_zero,
-            include_abbr=True,
-        )
-        quantity_wo_abbr = get_quantity(
-            final_graph_wo_sign_en,
-            final_graph_wo_sign,
-            cardinal_graph_hundreds_one_non_zero_en,
-            cardinal_graph_hundreds_one_non_zero,
-            include_abbr=False,
-        )
-        self.final_graph_wo_negative_w_abbr = final_graph_wo_sign | quantity_w_abbr
-        self.final_graph_wo_negative_w_abbr_en = final_graph_wo_sign_en | quantity_w_abbr
-        self.final_graph_wo_negative = final_graph_wo_sign | quantity_wo_abbr
-        self.final_graph_wo_negative_en = final_graph_wo_sign_en | quantity_wo_abbr
-
-        final_graph = optional_graph_negative + self.final_graph_wo_negative_w_abbr
-
-        final_graph = self.add_tokens(final_graph)
-        self.fst = final_graph.optimize()
+        self.fst = self.add_tokens(optional_negative + self.final_graph_wo_sign).optimize()

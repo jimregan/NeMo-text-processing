@@ -14,7 +14,6 @@
 # limitations under the License.
 import pynini
 from nemo_text_processing.text_normalization.en.graph_utils import NEMO_DIGIT, NEMO_SPACE, GraphFst, insert_space
-from nemo_text_processing.text_normalization.ga import DIALECT
 from nemo_text_processing.text_normalization.ga.graph_utils import GA_ALPHA
 from nemo_text_processing.text_normalization.ga.utils import get_abs_path
 from pynini.lib import pynutil
@@ -35,9 +34,10 @@ class DateFst(GraphFst):
         cardinal: cardinal GraphFst
         deterministic: if True will provide a single transduction option,
             for False multiple transduction are generated (used for audio-based normalization)
+        dialect: Irish dialect code used for dialect-dependent time expressions
     """
 
-    def __init__(self, cardinal: GraphFst, ordinal: GraphFst, deterministic: bool):
+    def __init__(self, cardinal: GraphFst, ordinal: GraphFst, deterministic: bool, dialect: str = "co"):
         super().__init__(name="date", kind="classify", deterministic=deterministic)
 
         number_to_month = month_numbers.optimize()
@@ -77,7 +77,7 @@ class DateFst(GraphFst):
         )
         year_cardinal = ((NEMO_DIGIT - "0") + pynini.closure(NEMO_DIGIT, 1, 3)) @ numbers
         year_parts = pynini.union(year_first + insert_space + year_second, year_first)  # 90, 990, 1990
-        if DIALECT == "co":
+        if dialect == "co":
             year = year_cardinal
             if not deterministic:
                 year |= year_parts
