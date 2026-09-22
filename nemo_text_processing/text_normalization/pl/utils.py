@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION & AFFILIATES.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ def get_abs_path(rel_path):
 
     Args:
         rel_path: relative path to this file
-        
+
     Returns absolute path
     """
     return os.path.dirname(os.path.abspath(__file__)) + '/' + rel_path
@@ -66,6 +66,7 @@ def adjective_inflection(word: str, compound: str = "") -> dict:
             "pl_loc": stem + vowel + "ch",
             "compound": compound,
         }
+
     stem_b = ""
     if word.endswith("en"):
         stem = word[:-2] + "n"
@@ -77,6 +78,11 @@ def adjective_inflection(word: str, compound: str = "") -> dict:
         mi_sg = word
         mp_pl = word
         vowel = ""
+    elif word.endswith("ony"):
+        stem = word[:-1]
+        mi_sg = word
+        mp_pl = word[:-3] + "eni"
+        vowel = "y"
     elif word.endswith("szy"):
         stem = word[:-1]
         mi_sg = word
@@ -87,6 +93,12 @@ def adjective_inflection(word: str, compound: str = "") -> dict:
         stem_b = word[:-1]
         mi_sg = word
         mp_pl = word[:-2] + "dzy"
+        vowel = ""
+    elif word.endswith("ki"):
+        stem = word
+        stem_b = word[:-1]
+        mi_sg = word
+        mp_pl = word[:-2] + "cy"
         vowel = ""
     elif word.endswith("sty"):
         stem = word[:-1]

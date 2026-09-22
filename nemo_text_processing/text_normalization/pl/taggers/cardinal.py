@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION & AFFILIATES.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # Copyright (c) 2022, 2023 Jim O'Regan for Språkbanken Tal
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,499 +12,372 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import Dict, Iterable
+
 import pynini
+from pynini.lib import pynutil
+
 from nemo_text_processing.text_normalization.en.graph_utils import (
     NEMO_DIGIT,
     NEMO_SIGMA,
-    NEMO_SPACE,
-    NEMO_WHITE_SPACE,
     GraphFst,
     delete_space,
     insert_space,
 )
 from nemo_text_processing.text_normalization.pl.graph_utils import PL_ALPHA
-from nemo_text_processing.text_normalization.pl.graph_utils import dict_to_graph
+from nemo_text_processing.text_normalization.pl.inflection import load_numeric_nouns
 from nemo_text_processing.text_normalization.pl.utils import adjective_inflection, get_abs_path, load_labels
-from nemo_text_processing.text_normalization.pl.taggers.ordinal import complete_paradigm
-from pynini.lib import pynutil
-
 
 CASES = ["nom", "gen", "dat", "acc", "ins", "loc", "voc"]
-
-
-def make_million(number, digits_grouped, case: str = None, deterministic: bool = True) -> 'pynini.FstLike':
-    if case is None:
-        case = "nom"
-
-    # fixme
-    graph = pynutil.add_weight(pynini.cross("001", number["sg_nom"]), -0.001)
-    if not deterministic:
-        # fixme
-        graph |= pynutil.add_weight(pynini.cross("001", digits_grouped["sg"] + insert_space + number["sg_nom"]), -0.001)
-    if case in ["nom", "acc", "voc"]:
-        graph |= (digits_grouped["pl"] + insert_space + number["pl_nom"])
-        graph |= (digits_grouped["qnt"] + insert_space + number["pl_gen"])
-    else:
-        graph |= (digits_grouped["pl"] | digits_grouped["qnt"]) + insert_space + number[case]
-
-    graph |= pynutil.delete("000")
-    graph += insert_space
-    return graph
+DEFAULT_SLOT = "mi_sg_nom"
+SCALE_NAMES = ["tysiąc", "milion", "miliard", "bilion", "biliard", "trylion", "tryliard"]
 
 
 def filter_punctuation(fst: 'pynini.FstLike') -> 'pynini.FstLike':
-    """
-    Helper function for parsing number strings. Converts common cardinal strings (groups of three digits delineated by space)
-    and converts to a string of digits:
-        "1 000" -> "1000"
-    Args:
-        fst: Any pynini.FstLike object. Function composes fst onto string parser fst
-
-    Returns:
-        fst: A pynini.FstLike object
-    """
-    exactly_three_digits = NEMO_DIGIT ** 3  # for blocks of three
-    up_to_three_digits = pynini.closure(NEMO_DIGIT, 1, 3)  # for start of string
-
-    cardinal_separator = NEMO_SPACE
-    cardinal_string = pynini.closure(
-        NEMO_DIGIT, 1
-    )  # For string w/o punctuation (used for page numbers, thousand series)
-
+    exactly_three_digits = NEMO_DIGIT**3
+    up_to_three_digits = pynini.closure(NEMO_DIGIT, 1, 3)
+    cardinal_string = pynini.closure(NEMO_DIGIT, 1)
     cardinal_string |= (
         up_to_three_digits
-        + pynutil.delete(cardinal_separator)
-        + pynini.closure(exactly_three_digits + pynutil.delete(cardinal_separator))
+        + pynutil.delete(" ")
+        + pynini.closure(exactly_three_digits + pynutil.delete(" "))
         + exactly_three_digits
     )
-
     return cardinal_string @ fst
 
 
-def make_inflected_graph_dict(file_path: str, cross: str, deterministic=False) -> dict:
-    graph_dict = {}
-    for line in load_labels(get_abs_path(file_path)):
-        key, value = line[0], line[1]
-        if key not in graph_dict:
-            graph_dict[key] = pynini.cross(cross, value)
+def get_digit_forms(filepath: str) -> Dict[str, Dict[str, object]]:
+    output = {}
+    for digit, grammar, form in load_labels(get_abs_path(filepath)):
+        forms = output.setdefault(digit, {})
+        if grammar not in forms:
+            forms[grammar] = form
+        elif isinstance(forms[grammar], list):
+            forms[grammar].append(form)
         else:
-            if not deterministic:
-                graph_dict[key] |= pynini.cross(cross, value)
-    return graph_dict
-
-
-def get_nominal_inflections(inflection_file, noun_file):
-    output = {}
-    inflections = {a[0]: a[1] for a in load_labels(get_abs_path(inflection_file))}
-    digit_noun_tsv = load_labels(get_abs_path(noun_file))
-    for digit_noun in digit_noun_tsv:
-        word = digit_noun[0]
-        digit = digit_noun[1]
-        lemma_ending = inflections["sg_nom"]
-        assert word.endswith(lemma_ending), f"Word {word} does not end with {lemma_ending}"
-        stem = word[:-len(lemma_ending)]
-        wordforms = {k: stem + v for k, v in inflections.items()}
-        output[digit] = wordforms
+            forms[grammar] = [forms[grammar], form]
     return output
 
 
-def get_nominal_graph(inflection_file, noun_file):
-    output = {}
-    input = get_nominal_inflections(inflection_file, noun_file)
-    for item in input:
-        for key in input[item]:
-            if not key in output:
-                output[key] = pynini.cross(item, input[item][key])
-            else:
-                output[key] |= pynini.cross(item, input[item][key])
-    return output
+def _forms_to_graphs(
+    forms: Dict[str, Dict[str, object]], deterministic: bool
+) -> Dict[str, Dict[str, 'pynini.FstLike']]:
+    graphs = {}
+    for number, slots in forms.items():
+        graphs[number] = {}
+        for slot, values in slots.items():
+            values = values if isinstance(values, list) else [values]
+            if deterministic:
+                values = values[:1]
+            graphs[number][slot] = pynini.union(*(pynini.cross(number, value) for value in values)).optimize()
+    return graphs
 
 
-def get_digit_forms(filepath):
-    """
-    Returns a dictionary of digit forms for Polish numbers.
-    """
-    output = {}
-    for line in load_labels(get_abs_path(filepath)):
-        digit, grammar, form = line[0], line[1], line[2]
-        if not digit in output:
-            output[digit] = {}
-        if grammar not in output[digit]:
-            output[digit][grammar] = form
-        else:
-            if type(output[digit][grammar]) is list:
-                output[digit][grammar].append(form)
-            else:
-                output[digit][grammar] = [output[digit][grammar], form]
-    return output
+def _invert_string_file(path: str) -> 'pynini.FstLike':
+    return pynini.invert(pynini.string_file(get_abs_path(path))).optimize()
 
 
-def get_digits_all(jeden_all, deterministic):
-    dwa_cases = ["mi_pl_nom", "pl_gen", "pl_dat", "mi_pl_nom", "mi_pl_ins", "pl_gen", "mi_pl_nom"]
-    pl_cases = ["mi_pl_nom", "pl_gen", "pl_dat", "mi_pl_nom", "pl_ins", "pl_gen", "mi_pl_nom"]
-    qnt_cases = ["mi_pl_nom", "pl_gen", "pl_gen", "mi_pl_nom", "pl_ins", "pl_gen", "mi_pl_nom"]
-
-    # jeden (one) does not inflect in compound numbers, so we use the nominative form
-    # e.g., https://www.poradnia-jezykowa.uni.lodz.pl/szczegoly/jeden-w-liczebnikach-wielowyrazowych
-    # but a lot of people get this wrong, so we also include the inflected forms
-    # This is different from Russian; also, jeden in compounds is a quantity, not singular
-    jeden_filt = {}
-    jeden_compound = {}
+def _case_for_slot(slot: str) -> str:
+    if slot == "compound":
+        return slot
     for case in CASES:
-        jeden_filt[case] = jeden_all[f'mi_sg_{case}'].optimize()
-        jeden_compound[case] = pynini.cross("1", "jeden")
-        if not deterministic:
-            jeden_compound[case] |= jeden_all[f'mi_sg_{case}'].optimize()
-
-    # 2-4 are plural (5-9 are quantities)
-    digit_forms_all = get_digit_forms("data/numbers/digit_forms.tsv")
-    digit_graph = dict_to_graph(digit_forms_all, deterministic=deterministic)
-    digit_pl = {}
-    for idx in range(len(CASES)):
-        digit_pl[CASES[idx]] = pynini.union(
-            digit_graph["2"][dwa_cases[idx]],
-            digit_graph["3"][pl_cases[idx]],
-            digit_graph["4"][pl_cases[idx]]
-        ).optimize()
-    
-    digit_qnt = {}
-    for idx in range(len(CASES)):
-        digit_qnt[CASES[idx]] = pynini.union(
-            digit_graph["5"][qnt_cases[idx]],
-            digit_graph["6"][qnt_cases[idx]],
-            digit_graph["7"][qnt_cases[idx]],
-            digit_graph["8"][qnt_cases[idx]],
-            digit_graph["9"][qnt_cases[idx]]
-        ).optimize()
-
-    compound_part = jeden_all["compound"]
-    compound_part |= pynini.union(
-        *[digit_graph[str(x)]["compound"] for x in range(2, 10)]
-    )
+        if slot == case or slot.endswith(f"_{case}"):
+            return case
+    raise ValueError(f"Cannot determine case from slot: {slot}")
 
 
-    digits_grouped = {
-        "sg": jeden_compound,
-        "sg_only": jeden_filt,
-        "pl": digit_pl,
-        "qnt": digit_qnt,
-        "compound": compound_part,
+def _select(mapping: Dict[str, 'pynini.FstLike'], keys: Iterable[str]) -> 'pynini.FstLike':
+    for key in keys:
+        if key in mapping:
+            return mapping[key]
+    raise KeyError(f"None of {list(keys)} is available")
+
+
+def _noun_forms(lemma: str) -> Dict[str, str]:
+    if lemma == "tysiąc":
+        return {key: value for key, value in load_labels(get_abs_path("data/numbers/tysiac.tsv"))}
+
+    stem = lemma
+    loc_sg = "u"
+    if lemma.endswith("ion"):
+        loc_sg = "ie"
+    elif lemma.endswith("iard"):
+        loc_sg = "zie"
+    return {
+        "sg_nom": lemma,
+        "sg_gen": lemma + "a",
+        "sg_dat": lemma + "owi",
+        "sg_acc": lemma,
+        "sg_ins": lemma + "em",
+        "sg_loc": stem + loc_sg,
+        "sg_voc": lemma + "ie",
+        "pl_nom": lemma + "y",
+        "pl_gen": lemma + "ów",
+        "pl_dat": lemma + "om",
+        "pl_acc": lemma + "y",
+        "pl_ins": lemma + "ami",
+        "pl_loc": lemma + "ach",
+        "pl_voc": lemma + "y",
     }
-
-    return digits_grouped
-
-
-def get_two_digits_all(digits_grouped, deterministic: bool = True):
-    zero = pynutil.delete("0")
-
-    two_digits_grouped = {}
-    # 0[1-9]
-    for key in digits_grouped:
-        two_digits_grouped[key] = {}
-        for case in CASES:
-            if key != "compound":
-                two_digits_grouped[key][case] = zero + digits_grouped[key][case]
-    # 1[0-9]
-    teens_cases = ["mi_pl_nom", "pl_gen", "pl_gen", "mi_pl_nom", "pl_ins", "pl_gen", "mi_pl_nom"]
-    teens_forms_all = get_digit_forms("data/numbers/teens_forms.tsv")
-    teens_graph_all = dict_to_graph(teens_forms_all, deterministic=deterministic)
-    teens_graph = {}
-    first_key = list(teens_graph_all.keys())[0]
-    for key in teens_graph_all[first_key]:
-        teens_graph[key] = pynini.union(
-            *[teens_graph_all[num][key] for num in teens_graph_all]
-        ).optimize()
-
-    for idx in range(len(CASES)):
-        two_digits_grouped["qnt"][CASES[idx]] |= teens_graph[teens_cases[idx]]
-
-    # [2-9][0-9]
-    tens_forms_all = get_digit_forms("data/numbers/tens_forms.tsv")
-    tens_graph_all = dict_to_graph(tens_forms_all, deterministic=deterministic)
-    tens_graph = {}
-    first_key = list(tens_graph_all.keys())[0]
-    for key in tens_graph_all[first_key]:
-        tens_graph[key] = pynini.union(
-            *[tens_graph_all[num][key] for num in tens_graph_all]
-        ).optimize()
-
-    for idx in range(len(CASES)):
-        two_digits_grouped["qnt"][CASES[idx]] |= pynini.union(
-            tens_graph[teens_cases[idx]] + zero,
-            tens_graph[teens_cases[idx]] + insert_space + digits_grouped["sg"][CASES[idx]],
-            tens_graph[teens_cases[idx]] + insert_space + digits_grouped["qnt"][CASES[idx]]
-        )
-        two_digits_grouped["pl"][CASES[idx]] |= (
-            tens_graph[teens_cases[idx]] + insert_space + digits_grouped["pl"][CASES[idx]]
-        )
-        # https://aleklasa.pl/gimnazjum/gramatyka/c182-fleksja/odmiana-liczebnikow
-        if deterministic and CASES[idx] == "ins":
-            two_digits_grouped["qnt"][CASES[idx]] |= (
-                zero + digits_grouped["qnt"]["gen"],
-                teens_graph["gen"],
-                tens_graph["gen"] + insert_space + digits_grouped["sg"][CASES[idx]],
-                tens_graph["gen"] + insert_space + digits_grouped["qnt"][CASES[idx]]
-            )
-            two_digits_grouped["pl"][CASES[idx]] |= (
-                tens_graph["gen"] + insert_space + digits_grouped["pl"][CASES[idx]]
-            )
-
-    nd_space = pynini.accep("")
-    if not deterministic:
-        nd_space |= insert_space
-
-    two_digits_grouped["compound"] = pynini.union(
-        zero + digits_grouped["compound"],
-        teens_graph["compound"],
-        tens_graph["compound"] + zero,
-        tens_graph["compound"] + nd_space + digits_grouped["compound"]
-    ).optimize()
-
-    return two_digits_grouped
 
 
 class CardinalFst(GraphFst):
-    """
-    Finite state transducer for classifying cardinals, e.g.
-        "1000" ->  cardinal { integer: "tysiąc" }
-        "2 000 000" -> cardinal { integer: "dwa miliony" }
-
-    Args:
-        deterministic: if True will provide a single transduction option,
-            for False multiple transduction are generated (used for audio-based normalization)
-    """
+    """Classifies Polish cardinal numbers and exposes each inflectional graph in ``graphs``."""
 
     def __init__(self, deterministic: bool = True):
         super().__init__(name="cardinal", kind="classify", deterministic=deterministic)
 
-        jeden_all_raw = adjective_inflection("jeden")
-        jeden_graph = pynini.cross("1", jeden_all_raw["mi_sg_nom"])
+        digit_forms = get_digit_forms("data/numbers/digit_forms.tsv")
+        teen_forms = get_digit_forms("data/numbers/teens_forms.tsv")
+        digit_graphs = _forms_to_graphs(digit_forms, deterministic)
+        teen_graphs = _forms_to_graphs(teen_forms, deterministic)
+
+        jeden = adjective_inflection("jeden", compound="jedno")
+        from nemo_text_processing.text_normalization.pl.taggers.ordinal import complete_paradigm
+
+        complete_paradigm(jeden, complete=True)
+        self.jeden_all = {slot: pynini.cross("1", form) for slot, form in jeden.items()}
+
+        zero_forms = {
+            "sg_nom": "zero",
+            "sg_gen": "zera",
+            "sg_dat": "zeru",
+            "sg_acc": "zero",
+            "sg_ins": "zerem",
+            "sg_loc": "zerze",
+            "sg_voc": "zero",
+        }
+        self.zero_all = {slot: pynini.cross("0", form) for slot, form in zero_forms.items()}
+        self.zero_sg = {slot[3:]: graph for slot, graph in self.zero_all.items()}
+        single_digit = pynini.union(
+            self.zero_all["sg_nom"],
+            self.jeden_all[DEFAULT_SLOT],
+            *(forms["mi_pl_nom"] for forms in digit_graphs.values()),
+        ).optimize()
+        self.single_digits_graph = (single_digit + pynini.closure(insert_space + single_digit)).optimize()
+
+        ordinary_slots = set(self.jeden_all)
+        for forms in digit_forms.values():
+            ordinary_slots.update(forms)
+        for forms in teen_forms.values():
+            ordinary_slots.update(forms)
+
+        tens_nom = _invert_string_file("data/numbers/tens.tsv")
+        tens_gen = _invert_string_file("data/numbers/tens_gen.tsv")
+        tens_ins = _invert_string_file("data/numbers/tens_ins.tsv")
+        tens_compound = _invert_string_file("data/numbers/tens_prefix.tsv")
+        hundreds_nom = _invert_string_file("data/numbers/hundreds.tsv")
+        hundreds_gen = _invert_string_file("data/numbers/hundreds_gen.tsv")
+        hundreds_ins = _invert_string_file("data/numbers/hundreds_ins.tsv")
+        hundreds_compound = _invert_string_file("data/numbers/hundreds.tsv")
+
+        join = pynutil.insert(" ")
+        compound_join = pynutil.insert("")
         if not deterministic:
-            for key in jeden_all_raw:
-                if key == "mi_sg_nom":
-                    continue
-                jeden_graph |= pynini.cross("1", jeden_all_raw[key])
-        complete_paradigm(jeden_all_raw)
-        self.jeden_all = {k: pynini.cross("1", jeden_all_raw[k]) for k in jeden_all_raw.keys()}
-        self.zero_all = get_nominal_graph("data/grammar/noun_nt_ro.tsv", "data/numbers/zero.tsv")
-        self.zero_sg = {x.replace("sg_", ""): y for x, y in self.zero_all.items() if x.startswith("sg_")}
+            compound_join |= pynutil.add_weight(pynutil.insert(" "), 0.001)
 
-        digits_all = get_digits_all(self.jeden_all, deterministic)
+        self.graphs = {}
+        self.two_digit_graphs = {}
+        self.hundreds_graphs = {}
 
+        for slot in sorted(ordinary_slots):
+            case = _case_for_slot(slot)
+            if case == "compound":
+                tens = tens_compound
+                hundreds = hundreds_compound
+                component_join = compound_join
+            elif case == "ins":
+                tens = tens_ins
+                hundreds = hundreds_ins
+                component_join = join
+            elif case in {"gen", "dat", "loc"} or slot.startswith("mp_"):
+                tens = tens_gen
+                hundreds = hundreds_gen
+                component_join = join
+            else:
+                tens = tens_nom
+                hundreds = hundreds_nom
+                component_join = join
 
-        # plural_3digits = NEMO_DIGIT + (NEMO_DIGIT - "1") + pynini.union("2", "3", "4")
-        # quantity_3digits = NEMO_DIGIT + pynini.union(
-        #     "1" + NEMO_DIGIT,
-        #     (NEMO_DIGIT - "1") + pynini.union("0", "5", "6", "7", "8", "9")
-        # )
+            digit = self._digit_for_slot(digit_graphs, slot)
+            compound_digit = self._compound_digit_for_slot(digit_graphs, slot)
+            teen = self._teen_for_slot(teen_graphs, slot)
+            isolated_one = self._one_for_slot(slot, compound=False, deterministic=deterministic)
+            compound_one = self._one_for_slot(slot, compound=True, deterministic=deterministic)
+            two_digit = (
+                teen
+                | tens + pynutil.delete("0")
+                | tens + component_join + (compound_digit | compound_one)
+                | pynutil.delete("0") + (digit | isolated_one)
+            ).optimize()
+            hundred = (
+                hundreds + pynutil.delete("00")
+                | hundreds + component_join + two_digit
+                | pynutil.delete("0") + two_digit
+                | pynutil.delete("00") + (digit | isolated_one)
+            ).optimize()
 
-        # hundreds = digits_no_one + pynutil.insert("hundra")
-        # hundreds |= pynini.cross("1", "hundra")
-        # if not deterministic:
-        #     hundreds |= pynutil.add_weight(pynini.cross("1", "etthundra"), -0.001)
-        #     hundreds |= pynutil.add_weight(digit + pynutil.insert(NEMO_SPACE) + pynutil.insert("hundra"), -0.001)
+            self.two_digit_graphs[slot] = two_digit
+            self.hundreds_graphs[slot] = hundred
+        for slot, hundred in self.hundreds_graphs.items():
+            self.graphs[slot] = self._make_full_number_graph(hundred, slot, deterministic)
 
-        # self.tens = graph_tens.optimize()
+        self.graph_dict = self.graphs
+        noun_graph_sets = [
+            load_numeric_nouns("data/numbers/digit_noun.tsv", "noun_f_ka.tsv"),
+            load_numeric_nouns("data/numbers/teen_noun.tsv", "noun_f_ka.tsv"),
+            load_numeric_nouns("data/numbers/tens_noun.tsv", "noun_f_ka.tsv", trailing_zeros=1),
+            load_numeric_nouns("data/numbers/hundreds_noun.tsv", "noun_f_ka.tsv", trailing_zeros=2),
+        ]
+        self.noun_graphs = noun_graph_sets[0]
+        for noun_graph_set in noun_graph_sets[1:]:
+            for slot, graph in noun_graph_set.items():
+                self.noun_graphs[slot] = (self.noun_graphs[slot] | graph).optimize()
+        self.noun_graph = pynini.union(*self.noun_graphs.values()).optimize()
 
-        # graph_two_digit_non_zero = pynini.union(graph_digit, graph_tens, (pynutil.delete("0") + graph_digit))
-        # if not deterministic:
-        #     graph_two_digit_non_zero |= pynutil.add_weight(
-        #         pynini.union(graph_digit, graph_tens, (pynini.cross("0", NEMO_SPACE) + graph_digit)), -0.001
-        #     )
+        compound_boundary = pynutil.delete("-")
+        if not deterministic:
+            compound_boundary += pynini.union(pynutil.insert(""), pynutil.add_weight(pynutil.insert(" "), 0.001))
+        self.compound = (self.graphs["compound"] + compound_boundary + pynini.closure(PL_ALPHA, 1)).optimize()
 
-        # self.two_digit_non_zero = graph_two_digit_non_zero.optimize()
+        self.graph = (
+            filter_punctuation(self.graphs[DEFAULT_SLOT] | self.zero_all["sg_nom"]).optimize()
+            | self.compound
+            | self.noun_graph
+        )
+        if not deterministic:
+            self.graph = (
+                filter_punctuation(pynini.union(*self.graphs.values(), *self.zero_all.values())).optimize()
+                | self.compound
+                | self.noun_graph
+            )
 
-        # graph_final_two_digit_non_zero = pynini.union(final_digit, graph_tens, (pynutil.delete("0") + final_digit))
-        # if not deterministic:
-        #     graph_final_two_digit_non_zero |= pynutil.add_weight(
-        #         pynini.union(final_digit, graph_tens, (pynini.cross("0", NEMO_SPACE) + final_digit)), -0.001
-        #     )
+        self.graph_unfiltered = self.graph
+        optional_minus = pynini.closure(pynutil.insert("negative: ") + pynini.cross("-", '"true" '), 0, 1)
+        final_graph = optional_minus + pynutil.insert('integer: "') + self.graph + pynutil.insert('"')
+        self.fst = self.add_tokens(final_graph).optimize()
 
-        # self.final_two_digit_non_zero = graph_final_two_digit_non_zero.optimize()
+    def _digit_for_slot(self, graphs, slot):
+        choices = {
+            "f_pl_nom": ["f_pl_nom", "mi_pl_nom"],
+            "f_pl_ins": ["f_pl_ins", "pl_ins"],
+            "mi_pl_ins": ["mi_pl_ins", "pl_ins"],
+            "pl_ins": ["mi_pl_ins", "pl_ins"],
+        }.get(slot, [slot])
+        case = _case_for_slot(slot)
+        if case == "loc":
+            choices += ["pl_gen"]
+        if case in {"acc", "voc"}:
+            choices += [slot.rsplit("_", 1)[0] + "_nom", "mi_pl_nom"]
+        choices += [f"pl_{case}", "mi_pl_nom"]
+        return pynini.union(*(_select(forms, choices) for forms in graphs.values())).optimize()
 
-        # # Three digit strings
-        # graph_hundreds = hundreds + pynini.union(pynutil.delete("00"), graph_tens, (pynutil.delete("0") + final_digit))
-        # if not deterministic:
-        #     graph_hundreds |= pynutil.add_weight(
-        #         hundreds
-        #         + pynini.union(
-        #             pynutil.delete("00"),
-        #             (graph_tens | pynutil.insert(NEMO_SPACE) + graph_tens),
-        #             (pynini.cross("0", NEMO_SPACE) + final_digit),
-        #         ),
-        #         -0.001,
-        #     )
+    def _compound_digit_for_slot(self, graphs, slot):
+        if slot.startswith("mp_") and _case_for_slot(slot) in {"nom", "acc"}:
+            choices = ["pl_gen", "mp_pl_nom"]
+        elif slot == "pl_ins":
+            choices = ["mi_pl_ins", "pl_ins"]
+        else:
+            choices = [slot]
+        case = _case_for_slot(slot)
+        if case == "loc":
+            choices += ["pl_gen"]
+        choices += [f"pl_{case}", "mi_pl_nom"]
+        return pynini.union(*(_select(forms, choices) for forms in graphs.values())).optimize()
 
-        # self.hundreds = graph_hundreds.optimize()
+    def _teen_for_slot(self, graphs, slot):
+        case = _case_for_slot(slot)
+        choices = [slot, f"pl_{case}"]
+        if case == "loc":
+            choices += ["pl_gen"]
+        if case in {"acc", "voc"}:
+            choices += ["mp_pl_nom" if slot.startswith("mp_") else "mi_pl_nom"]
+        choices += ["mi_pl_nom"]
+        return pynini.union(*(_select(forms, choices) for forms in graphs.values())).optimize()
 
-        # # For all three digit strings with leading zeroes (graph appends '0's to manage place in string)
-        # graph_hundreds_component = pynini.union(graph_hundreds, pynutil.delete("0") + graph_tens)
+    def _one_for_slot(self, slot, compound, deterministic):
+        if slot == "compound":
+            return self.jeden_all[slot]
+        if not compound:
+            return self.jeden_all[slot]
+        case = _case_for_slot(slot)
+        graph = pynini.cross("1", "jeden")
+        if not deterministic:
+            key = slot if slot in self.jeden_all else f"mi_sg_{case}"
+            graph |= pynutil.add_weight(self.jeden_all[key], 0.001)
+        return graph.optimize()
 
-        # graph_hundreds_component_at_least_one_non_zero_digit = graph_hundreds_component | (
-        #     pynutil.delete("00") + graph_digit
-        # )
+    def _make_full_number_graph(self, group, slot, deterministic):
+        case = _case_for_slot(slot)
+        if case == "compound":
+            short_input = pynini.closure(NEMO_DIGIT, 1, 3)
+            pad = (
+                short_input
+                @ pynini.cdrewrite(pynini.closure(pynutil.insert("0")), "[BOS]", "", NEMO_SIGMA)
+                @ NEMO_DIGIT**3
+            )
+            return (pad @ group).optimize()
 
-        # graph_hundreds_component_at_least_one_non_zero_digit_no_one = graph_hundreds_component | (
-        #     pynutil.delete("00") + digits_no_one
-        # )
-        # self.graph_hundreds_component_at_least_one_non_zero_digit_no_one = (
-        #     graph_hundreds_component_at_least_one_non_zero_digit_no_one.optimize()
-        # )
+        scale_slot = {
+            "nom": "mi_sg_nom",
+            "acc": "mi_sg_acc",
+            "voc": "mi_sg_voc",
+            "gen": "pl_gen",
+            "dat": "pl_dat",
+            "ins": "mi_pl_ins",
+            "loc": "pl_gen",
+        }[case]
+        scale_group = self.hundreds_graphs[scale_slot]
 
-        # following_hundred = insert_space + graph_hundreds_component_at_least_one_non_zero_digit
-        # if not deterministic:
-        #     following_hundred |= graph_hundreds_component_at_least_one_non_zero_digit
+        plural_group = self._restrict_group(scale_group, "plural")
+        quantity_group = self._restrict_group(scale_group, "quantity")
+        non_one_group = self._restrict_group(scale_group, "non_one")
+        factors = []
+        for scale in reversed(SCALE_NAMES):
+            forms = _noun_forms(scale)
+            if case in {"nom", "acc", "voc"}:
+                singular = forms[f"sg_{case}"]
+                plural = forms[f"pl_{case}"]
+                quantity = forms["pl_gen"]
+                factor = (
+                    pynutil.delete("000")
+                    | pynini.cross("001", singular) + pynutil.insert(" ")
+                    | plural_group + pynutil.insert(" " + plural + " ")
+                    | quantity_group + pynutil.insert(" " + quantity + " ")
+                )
+            else:
+                factor = (
+                    pynutil.delete("000")
+                    | pynini.cross("001", forms[f"sg_{case}"]) + pynutil.insert(" ")
+                    | non_one_group + pynutil.insert(" " + forms[f"pl_{case}"] + " ")
+                )
+            if not deterministic:
+                factor |= pynutil.add_weight(pynini.cross("001", "jeden " + forms[f"sg_{case}"] + " "), 0.001)
+            factors.append(factor)
 
-        # graph_thousands_component_at_least_one_non_zero_digit = pynini.union(
-        #     pynutil.delete("000") + graph_hundreds_component_at_least_one_non_zero_digit,
-        #     graph_hundreds_component_at_least_one_non_zero_digit_no_one
-        #     + tusen
-        #     + (following_hundred | pynutil.delete("000")),
-        #     pynini.cross("001", etttusen) + (following_hundred | pynutil.delete("000")),
-        # )
-        # self.graph_thousands_component_at_least_one_non_zero_digit = (
-        #     graph_thousands_component_at_least_one_non_zero_digit.optimize()
-        # )
+        padded = (
+            ((NEMO_DIGIT - "0") + pynini.closure(NEMO_DIGIT))
+            @ pynini.cdrewrite(pynini.closure(pynutil.insert("0")), "[BOS]", "", NEMO_SIGMA)
+            @ NEMO_DIGIT**24
+        )
+        full = None
+        for factor in factors:
+            full = factor if full is None else full + factor
+        full += group | pynutil.delete("000")
+        clean = pynini.cdrewrite(delete_space, "", "[EOS]", NEMO_SIGMA)
+        return (padded @ full @ clean).optimize()
 
-        # graph_thousands_component_at_least_one_non_zero_digit_no_one = pynini.union(
-        #     pynutil.delete("000") + graph_hundreds_component_at_least_one_non_zero_digit_no_one,
-        #     graph_hundreds_component_at_least_one_non_zero_digit_no_one
-        #     + tusen
-        #     + (following_hundred | pynutil.delete("000")),
-        #     pynini.cross("001", etttusen) + (following_hundred | pynutil.delete("000")),
-        # )
-        # self.graph_thousands_component_at_least_one_non_zero_digit_no_one = (
-        #     graph_thousands_component_at_least_one_non_zero_digit_no_one.optimize()
-        # )
-
-        # non_zero_no_one = graph_hundreds_component_at_least_one_non_zero_digit_no_one
-        # graph_million = make_million("milion", non_zero_no_one, deterministic)
-        # graph_milliard = make_million("miliard", non_zero_no_one, deterministic)
-        # graph_billion = make_million("bilion", non_zero_no_one, deterministic)
-        # graph_billiard = make_million("biliard", non_zero_no_one, deterministic)
-        # graph_trillion = make_million("trilion", non_zero_no_one, deterministic)
-        # graph_trilliard = make_million("triliard", non_zero_no_one, deterministic)
-
-        # graph = (
-        #     graph_trilliard
-        #     + graph_trillion
-        #     + graph_billiard
-        #     + graph_billion
-        #     + graph_milliard
-        #     + graph_million
-        #     + (graph_thousands_component_at_least_one_non_zero_digit | pynutil.delete("000000"))
-        # )
-
-        # self.graph = (
-        #     ((NEMO_DIGIT - "0") + pynini.closure(NEMO_DIGIT, 0))
-        #     @ pynini.cdrewrite(pynini.closure(pynutil.insert("0")), "[BOS]", "", NEMO_SIGMA)
-        #     @ NEMO_DIGIT ** 24
-        #     @ graph
-        #     @ pynini.cdrewrite(delete_space, "[BOS]", "", NEMO_SIGMA)
-        #     @ pynini.cdrewrite(delete_space, "", "[EOS]", NEMO_SIGMA)
-        #     @ pynini.cdrewrite(
-        #         pynini.cross(pynini.closure(NEMO_WHITE_SPACE, 2), NEMO_SPACE), PL_ALPHA, PL_ALPHA, NEMO_SIGMA
-        #     )
-        # )
-
-        # self.graph_hundreds_component_at_least_one_non_zero_digit = (
-        #     pynini.closure(NEMO_DIGIT, 2, 3) | pynini.difference(NEMO_DIGIT, pynini.accep("0"))
-        # ) @ self.graph
-        # self.graph_hundreds_component_at_least_one_non_zero_digit_en = (
-        #     self.graph_hundreds_component_at_least_one_non_zero_digit
-        #     @ pynini.cdrewrite(ett_to_en, "", "[EOS]", NEMO_SIGMA)
-        # )
-        # # For plurals, because the 'one' in 21, etc. still needs to agree
-        # self.graph_hundreds_component_at_least_one_non_zero_digit_no_one = (
-        #     pynini.project(self.graph_hundreds_component_at_least_one_non_zero_digit, "input") - "1"
-        # ) @ self.graph_hundreds_component_at_least_one_non_zero_digit
-        # self.graph_hundreds_component_at_least_one_non_zero_digit_no_one_en = (
-        #     pynini.project(self.graph_hundreds_component_at_least_one_non_zero_digit_en, "input") - "1"
-        # ) @ self.graph_hundreds_component_at_least_one_non_zero_digit_en
-
-        # zero_space = zero + insert_space
-        # self.zero_space = zero_space
-        # self.three_digits_read = pynini.union(
-        #     ((NEMO_DIGIT - "0") + (NEMO_DIGIT ** 2))
-        #     @ self.graph_hundreds_component_at_least_one_non_zero_digit_no_one,
-        #     zero_space + ((NEMO_DIGIT ** 2) @ graph_tens),
-        #     zero_space + zero_space + digit,
-        # )
-        # self.three_digits_read_en = pynini.union(
-        #     ((NEMO_DIGIT - "0") + (NEMO_DIGIT ** 2))
-        #     @ self.graph_hundreds_component_at_least_one_non_zero_digit_no_one_en,
-        #     zero_space + ((NEMO_DIGIT ** 2) @ graph_tens),
-        #     zero_space + zero_space + digit,
-        # )
-        # self.three_digits_read_frac = pynini.union(
-        #     ((NEMO_DIGIT - "0") + (NEMO_DIGIT ** 2))
-        #     @ self.graph_hundreds_component_at_least_one_non_zero_digit_no_one,
-        #     zero_space + digit + insert_space + digit,
-        # )
-        # self.three_digits_read_frac_en = pynini.union(
-        #     ((NEMO_DIGIT - "0") + (NEMO_DIGIT ** 2))
-        #     @ self.graph_hundreds_component_at_least_one_non_zero_digit_no_one_en,
-        #     zero_space + digit + insert_space + digit,
-        # )
-        # self.two_or_three_digits_read_frac = pynini.union(
-        #     ((NEMO_DIGIT - "0") + (NEMO_DIGIT ** 2))
-        #     @ self.graph_hundreds_component_at_least_one_non_zero_digit_no_one,
-        #     ((NEMO_DIGIT - "0") + NEMO_DIGIT) @ graph_tens,
-        #     zero_space + single_digits_graph + pynini.closure(insert_space + digit, 0, 1),
-        #     single_digits_graph + pynini.closure(insert_space + single_digits_graph, 3),
-        #     zero_space + zero_space + zero,
-        #     single_digits_graph,
-        # )
-        # self.two_or_three_digits_read_frac_en = pynini.union(
-        #     ((NEMO_DIGIT - "0") + (NEMO_DIGIT ** 2))
-        #     @ self.graph_hundreds_component_at_least_one_non_zero_digit_no_one_en,
-        #     ((NEMO_DIGIT - "0") + NEMO_DIGIT) @ (graph_tens @ pynini.cdrewrite(ett_to_en, "", "[EOS]", NEMO_SIGMA)),
-        #     zero_space + single_digits_graph + pynini.closure(insert_space + single_digits_graph, 0, 1),
-        #     single_digits_graph + pynini.closure(insert_space + single_digits_graph, 3),
-        #     zero_space + zero_space + zero,
-        #     single_digits_graph,
-        # )
-        # self.two_digits_read = pynini.union(((NEMO_DIGIT - "0") + NEMO_DIGIT) @ graph_tens, zero_space + digit)
-        # self.two_digits_read_en = pynini.union(
-        #     ((NEMO_DIGIT - "0") + NEMO_DIGIT) @ (graph_tens @ pynini.cdrewrite(ett_to_en, "", "[EOS]", NEMO_SIGMA)),
-        #     zero_space + digit,
-        # )
-        # self.any_read_digit = ((NEMO_DIGIT - "0") @ digit) + pynini.closure(insert_space + digit)
-        # if not deterministic:
-        #     self.three_digits_read |= pynutil.add_weight(digit + insert_space + digit + insert_space + digit, -0.001)
-        #     self.three_digits_read |= pynutil.add_weight(
-        #         ((NEMO_DIGIT - "0") + NEMO_DIGIT) @ graph_tens + insert_space + digit, -0.001
-        #     )
-        #     self.three_digits_read |= pynutil.add_weight(
-        #         digit + insert_space + ((NEMO_DIGIT - "0") + NEMO_DIGIT) @ graph_tens, -0.001
-        #     )
-        #     self.two_digits_read |= pynutil.add_weight(digit + insert_space + digit, -0.001)
-
-        # self.graph |= zero
-
-        # self.graph_unfiltered = self.graph
-        # self.graph = filter_punctuation(self.graph).optimize()
-        # self.graph_en = self.graph @ pynini.cdrewrite(ett_to_en, "", "[EOS]", NEMO_SIGMA)
-        # self.graph_no_one = (pynini.project(self.graph, "input") - "1") @ self.graph
-        # self.graph_no_one_en = (pynini.project(self.graph_en, "input") - "1") @ self.graph_en
-
-        # joiner_chars = pynini.union("-", "–", "—")
-        # joiner = pynini.cross(joiner_chars, " till ")
-        # self.range = self.graph + joiner + self.graph
-        # if not deterministic:
-        #     either_one = self.graph | self.graph_en
-        #     self.range = either_one + joiner + either_one
-
-        # optional_minus_graph = pynini.closure(pynutil.insert("negative: ") + pynini.cross("-", "\"true\" "), 0, 1)
-
-        # final_graph = optional_minus_graph + pynutil.insert("integer: \"") + self.graph + pynutil.insert("\"")
-        # if not deterministic:
-        #     final_graph |= pynutil.add_weight(
-        #         optional_minus_graph + pynutil.insert("integer: \"") + self.graph_en + pynutil.insert("\""), -0.001
-        #     )
-        #     final_graph |= pynutil.add_weight(
-        #         pynutil.insert("integer: \"") + self.single_digits_graph + pynutil.insert("\""), -0.001
-        #     )
-
-        # final_graph = self.add_tokens(final_graph)
-        # self.fst = final_graph.optimize()
+    @staticmethod
+    def _restrict_group(group, kind):
+        hundred = NEMO_DIGIT
+        if kind == "plural":
+            inputs = hundred + (NEMO_DIGIT - "1") + pynini.union("2", "3", "4")
+        elif kind == "quantity":
+            inputs = hundred + pynini.union(
+                "1" + NEMO_DIGIT,
+                (NEMO_DIGIT - "1") + pynini.union("0", "5", "6", "7", "8", "9"),
+                (NEMO_DIGIT - "0") + "1",
+            )
+        else:
+            inputs = NEMO_DIGIT**3 - "001" - "000"
+        return inputs @ group
